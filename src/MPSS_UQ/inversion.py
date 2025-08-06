@@ -6,6 +6,12 @@ from scipy.linalg import toeplitz
 from tqdm import tqdm
 # from time import perf_counter
 
+# Prevent the system from throttling down the CPU by giving any process that uses
+# inversion methods a higher priority
+import psutil, os
+p = psutil.Process(os.getpid())
+p.nice(psutil.HIGH_PRIORITY_CLASS)
+
 
 def log_post(vals, DMPS, L_noise, prior, measurement):
     ''' Compute the logarithm of the (non-normalized) posterior. '''
