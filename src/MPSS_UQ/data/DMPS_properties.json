@@ -1,0 +1,17 @@
+{
+    "UEF-A20": {
+        "Qsh": 5,
+        "Qe": 5,
+        "Qa": 1,
+        "Qc": 1,
+        "T": 290.2,
+        "P": 101325,
+        "R1": 0.025,
+        "R2": 0.033,
+        "L": 0.28,
+        "center_voltage_sign": "positive",
+		"CPC_model": "Airmodus-A20",
+        "CPC_measuring_time": 5,
+        "CPC_output_type": "counts"
+    }
+}

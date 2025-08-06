@@ -1,0 +1,36 @@
+# -*- coding: utf-8 -*-
+
+[project]
+name = "MPSS-UQ"
+version = "0.0.1"
+description = "Invert mobility particle size spectrometer data to estimate particle size distributions - with uncertainty quantification"
+authors = [
+	{ name="Matti Niskanen", email="matti.niskanen@uef.fi" }
+]
+requires-python = ">=3.9"
+
+dependencies = [
+	"numpy>=2.0.0",
+	"scipy",
+	"matplotlib",
+	"tqdm",
+	"dill",
+]
+
+[build-system]
+#requires = ["setuptools"]
+#build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/MPSS_UQ"]
+
+[tool.hatch.build]
+include = [
+	"MPSS-UQ/**/*.py",
+	"MPSS-UQ/data/**",
+]
