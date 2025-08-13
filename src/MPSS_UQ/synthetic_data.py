@@ -14,7 +14,7 @@ def lognormal_distribution(d_m, N, median, log_std):
 def generate_DMPS_measurement(DMPS, scenario='Urban'):
     ''' Simulate measurement data using the DMPS model.
     Predefined PSD scenarios are:
-        Urban, Marine, Rural
+        Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert.
     '''
     
     # from MPSS_UQ.plotfunctions import plot_system_matrix
