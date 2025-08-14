@@ -1,0 +1,24 @@
+# In this configuration file you can modify or add as many DMPS configurations as needed
+
+UEF-A20:     # configuration name
+  # Ambient values
+  T: 290.2   # temperature [K]
+  P: 101325  # pressure [Pa]
+  
+  # DMA properties
+  Qsh: 5     # sheath flow rate [L/min]
+  Qe: 5      # exhaust flow rate [L/min]
+  Qa: 1      # aerosol flow rate [L/min]
+  Qc: 1      # classified sample flow rate [L/min]
+  R1: 0.025  # inner radius of the DMA [m]
+  R2: 0.033  # outer radius of the DMA [m]
+  L: 0.28    # length of the DMA [m]
+  center_voltage_sign: positive  # polarity of center electrode
+  
+  # CPC properties
+  CPC_measuring_time: 5    # measurement time per one output channel [s]
+  CPC_output_type: counts  # output type (counts/concentration)
+  # coefficients for using the ACTRIS type counting efficiency equation:
+  CPC_a: 0.96      # plateau efficiency [0 - 1]
+  CPC_b: 6.86      # diameter where the curve intersects the diameter-axis [nm]
+  CPC_dp50: 10.08  # 50 % counting efficiency diameter [nm]

@@ -111,6 +111,9 @@ class DifferentialMobilityParticleSizer():
         self.charging_probability = self.compute_charging_probability()
         self.penetration_efficiency = self.compute_penetration_efficiency()
         self.update_system_matrix()
+        
+        print(f"Using the {self.charging_model_name} charging model and " +
+              f"a/an {self.CPC.counting_efficiency_type} CPC counting efficiency curve.")
     
     
     def forward_model(self, log10_N):
@@ -454,25 +457,51 @@ class CondensationParticleCounter():
     def __init__(self, d_m, properties):
         
         self.d_m = d_m
-        self.model = properties['CPC_model']
         self.output_type = properties['CPC_output_type']  # counts or concentration
         self.measuring_time = properties['CPC_measuring_time']  # Per one output bin (s)
         
         self.sample_flow = properties['Qa'] * lpm_to_m3s * 1e6
         self.sampled_volume = self.measuring_time * self.sample_flow
         
-        self.counting_efficiency = self.calculate_counting_efficiency()
-    
-    
-    def calculate_counting_efficiency(self):
+        # Choose which function to use to calculate the counting efficiency
         
-        if self.model == 'Airmodus-A20':
-            a = 0.96
-            b = 6.86
-            dp50 = 10.08
-            
-            count_efficiency = a * (1 - np.exp(np.log(2) * ((b - self.d_m * 1e9) / (dp50 - b))))
-            return np.clip(count_efficiency, 0, 1)
+        # returns None if key not found
+        custom_function = properties.get('custom_CPC_count_eff_function')
         
+        if custom_function:
+            self.counting_efficiency = custom_function(self.d_m)
+            self.counting_efficiency_type = 'custom'
         else:
-            raise ValueError('Unknown CPC model.')
+            self.counting_efficiency = self.count_eff_ACTRIS_style(properties)
+            self.counting_efficiency_type = 'ACTRIS style'
+    
+    
+    def count_eff_ACTRIS_style(self, properties):
+        
+        a = properties['CPC_a']
+        b = properties['CPC_b']
+        dp50 = properties['CPC_dp50']
+        
+        if self.validate_input(a, b, dp50):
+            count_efficiency = a * (1 - np.exp(np.log(2) * ((b - self.d_m * 1e9) / (dp50 - b))))
+            
+            return np.clip(count_efficiency, 0, 1)
+    
+    
+    def validate_input(self, a, b, dp50):
+        ''' Check the types and ranges of the input to the ACTRIS style counting efficiency
+        calculation. '''
+
+        # Type checks
+        if not all(isinstance(x, (float)) for x in [a, b, dp50]):
+            raise TypeError("All inputs must be float.")
+    
+        # Range checks
+        if not (0 < a <= 1):
+            raise ValueError("Input 'a' must be between 0 and 1.")
+        if not (b >= 0):
+            raise ValueError("Input 'b' must be non-negative.")
+        if not (dp50 >= 0):
+            raise ValueError("Input 'c' must be non-negative.")
+    
+        return True

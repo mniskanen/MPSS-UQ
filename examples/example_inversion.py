@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import json
+import yaml
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -29,9 +29,24 @@ with loading the measured data.
 
 # Load a DMPS configuration file. This includes basic geometry and flow rates information
 # on the DMPS. The file DMPS_properties.json should be in the same folder as this script.
-with open('DMPS_properties.json', 'r') as f:
-    DMPS_prop = json.load(f)['UEF-A20']
+with open("DMPS_properties.yaml", "r") as f:
+    DMPS_prop = yaml.safe_load(f)
 
+# Choose the DMPS
+DMPS_prop = DMPS_prop['UEF-A20']
+
+
+# To use a custom form for the CPC counting efficiency, specify it here and add it to the
+# DMPS_prop dictionary under a key 'custom_CPC_count_eff_function'. The function should take
+# as input the mobility diameters in [m] and return the counting efficiency curve.
+
+# def custom_CPC_counting_efficiency(d_m):
+#     count_eff = 1.00 * (1 - np.exp(np.log(2) * ((7.5 - d_m * 1e9) / (10.0 - 7.5))))
+#     return np.clip(count_eff, 0, 1)
+
+# DMPS_prop['custom_CPC_count_eff_function'] = custom_CPC_counting_efficiency
+
+    
 
 # =============================================================================
 # Step 2, option 1: Generate synthetic data
@@ -98,6 +113,7 @@ prior = smoothness_prior(DMPS_prop['d_m'], expected_value,
                          )
 
 
+
 # =============================================================================
 # Step 4: Carry out inversion - Option 1: Laplace approximation
 # =============================================================================
@@ -128,6 +144,7 @@ posterior_samples = Laplace_approximation_marginalize(DMPS_marg, prior, measurem
                                                       marginalize_ion_mobility=True,
                                                       marginalize_ion_ratio=False,
                                                       )
+
 
 
 # =============================================================================

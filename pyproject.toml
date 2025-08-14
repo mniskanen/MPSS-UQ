@@ -15,6 +15,7 @@ dependencies = [
 	"matplotlib",
 	"tqdm",
 	"dill",
+	"pyyaml",
 ]
 
 [build-system]
