@@ -7,6 +7,7 @@ from scipy.special import erf
 # from time import perf_counter
 
 from MPSS_UQ.chargingmodels import (LYFChargingModel,
+                                    LYFInterpolator,
                                     LYFFluxInterpolator,
                                     WiedensohlerChargingModel,
                                     )
@@ -415,6 +416,21 @@ class DifferentialMobilityParticleSizer():
                                                          neg_ion_mobility,
                                                          ion_ratio
                                                          )
+        
+        elif model == 'LYF-interp-fast':
+            
+            fname = resources.files('MPSS_UQ.data') / 'interpolator_charging_probability'
+            
+            self.charger = LYFInterpolator(fname)
+            
+            def _charge_prob(self,
+                             pos_ion_mobility=default_pos_mob,
+                             neg_ion_mobility=default_neg_mob,
+                             ion_ratio=None,
+                             ):
+                # TODO: add a test for ion ratio and then raise a valueerror
+                
+                return self.charger(self.d_m, pos_ion_mobility, neg_ion_mobility, self.charges)
         
         else:
             raise Exception('Unknown charging model')

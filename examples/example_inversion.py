@@ -135,7 +135,8 @@ N_MAP_W, post_cov_W = Laplace_approximation(DMPS_inv, prior, measurement)
 
 # Have to use the LYF-interp model here
 DMPS_properties_marg = DMPS_prop.copy()
-DMPS_properties_marg['charging_model'] = 'LYF-interp'
+# DMPS_properties_marg['charging_model'] = 'LYF-interp'
+DMPS_properties_marg['charging_model'] = 'LYF-interp-fast'
 
 DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg)
 

@@ -149,9 +149,6 @@ class LYFChargingModel():
         
         '''
         
-        # if average_flux_coefficients is None:
-        #     average_flux_coefficients = self.compute_average_flux_coefficients()
-        
         if self.use_flux_interpolator:
             self.average_flux_coefficients = self.flux_interpolator(2 * self.particle_radius,
                                                                     pos_ion_mobility,
@@ -608,9 +605,9 @@ class LYFInterpolator():
                 # Negative ion mobility should be greater than that of the positive ion, but
                 # for the interpolator here leave a 5 % margin for numerical reasons
                 # if neg_ion_mob > 0.95 * pos_ion_mob:
-                breakpoint()
-                self.charging_model.update_ion_parameters(pos_ion_mob, neg_ion_mob)
-                values[:, :, i, j] = self.charging_model.charging_probability()
+                values[:, :, i, j] = self.charging_model.charging_probability(pos_ion_mob,
+                                                                              neg_ion_mob
+                                                                              )
                 # else:
                     # These values will never be interpolated so no need to run the model,
                     # just set to something practically zero
