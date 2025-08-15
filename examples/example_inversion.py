@@ -35,6 +35,9 @@ with open("DMPS_properties.yaml", "r") as f:
 # Choose the DMPS
 DMPS_prop = DMPS_prop['UEF-A20']
 
+# Mobility diameters the DMPS measures (i.e. the output channels)
+DMPS_prop['d_m_data'] = np.geomspace(6e-9, 800e-9, num=30) # d_min, d_max, num_bins
+
 
 # To use a custom form for the CPC counting efficiency, specify it here and add it to the
 # DMPS_prop dictionary under a key 'custom_CPC_count_eff_function'. The function should take
@@ -56,10 +59,7 @@ DMPS_prop = DMPS_prop['UEF-A20']
 DMPS_prop_datagen = DMPS_prop.copy()
 
 # Mobility diameters that are used to represent the true PSD
-DMPS_prop_datagen['d_m'] = np.geomspace(2e-9, 2500e-9, num=500)  # d_min, d_max, num_bins
-
-# Mobility diameters the DMPS measures (i.e. the output channels)
-DMPS_prop_datagen['d_m_data'] = np.geomspace(6e-9, 500e-9, num=30)
+DMPS_prop_datagen['d_m'] = np.geomspace(1e-9, 2500e-9, num=500)
 
 # Which bipolar charging model to use
 DMPS_prop_datagen['charging_model'] = 'LYF-interp'
@@ -77,6 +77,8 @@ ion_ratio = 1.0
 DMPS_datagen.update_charger_ion_properties(pos_ion_mobility, neg_ion_mobility, ion_ratio)
 
 # Create the measurement
+# Predefined PSD scenarios are:
+#     Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert
 measurement = generate_DMPS_measurement(DMPS_datagen, scenario='Urban')
 
 
@@ -90,11 +92,8 @@ measurement = generate_DMPS_measurement(DMPS_datagen, scenario='Urban')
 # Step 3: Set up the inversion model
 # =============================================================================
 
-# Mobility diameters the DMPS measures
-DMPS_prop['d_m_data'] = np.geomspace(6e-9, 500e-9, num=30)
-
 # Mobility diameters for the inverted PSD
-DMPS_prop['d_m'] = np.geomspace(6e-9, 2500e-9, num=50)
+DMPS_prop['d_m'] = np.geomspace(6e-9, 1000e-9, num=50)
 
 # Set up the prior. These values are given in log10-space.
 # Currently the only option is to use the smoothness prior.
@@ -106,7 +105,7 @@ expected_value = -2
 correlation_length = 12 / 16
 
 # Controls how large variations of #/cm3 are allowed in the PSD
-log_standard_deviation = 1.0
+log_standard_deviation = 1.5
 
 prior = smoothness_prior(DMPS_prop['d_m'], expected_value,
                          correlation_length, log_standard_deviation
@@ -135,7 +134,6 @@ N_MAP_W, post_cov_W = Laplace_approximation(DMPS_inv, prior, measurement)
 
 # Have to use the LYF-interp model here
 DMPS_properties_marg = DMPS_prop.copy()
-# DMPS_properties_marg['charging_model'] = 'LYF-interp'
 DMPS_properties_marg['charging_model'] = 'LYF-interp-fast'
 
 DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg)
@@ -165,8 +163,7 @@ plot_psd(axs[0], DMPS_inv.d_m, N=10**N_MAP_W, linestyle='--', color='k', label='
 plot_psd(axs[0], measurement['d_m'], n=measurement['n_true'], color='k', label='Truth')
 
 axs[0].set_yscale('linear')
-axs[0].set_xlim([6, 600])
-axs[0].set_ylim([0, 23e3])
+axs[0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
 axs[0].grid('on')
 axs[0].legend()
 axs[0].set_title('a) MAP estimate, Wiedensohler charging model', loc='left')
@@ -175,18 +172,20 @@ axs[0].set_title('a) MAP estimate, Wiedensohler charging model', loc='left')
 plot_marginalized_psd(DMPS_marg, posterior_samples, axs[1], CI=95)
 
 axs[1].plot(measurement['d_m'] * 1e9, measurement['n_true'], 'k-', label='Truth')
-
-plt_max_y = 20000
-plt_min_y = 0
-axs[1].axis([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9, plt_min_y, plt_max_y])
-
 axs[1].set_yscale('linear')
-axs[1].set_xlim([6, 600])
-axs[1].set_ylim([0, 23e3])
+axs[1].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
 axs[1].grid('on')
 axs[1].legend()
 axs[1].set_title('')
 axs[1].set_title('b) Marginalized posterior, LYF model', loc='left')
+
+# Set the same ylimits for both graphs
+_, y0_max = axs[0].get_ylim()
+_, y1_max = axs[1].get_ylim()
+y_max = np.max((y0_max, y1_max))
+
+axs[0].set_ylim([0, y_max])
+axs[1].set_ylim([0, y_max])
 
 fig.tight_layout()
 
