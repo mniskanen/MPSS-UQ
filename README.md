@@ -6,6 +6,7 @@ Installing
 The easiest way to install MPSS-UQ is to create a fresh [conda](https://docs.anaconda.com/miniconda/) environment (python>=3.9 required), clone (or download) this repository and install using pip (note the dot after pip install):
 ```
 conda create -n myenv python=3.11
+conda activate myenv
 git clone https://github.com/mniskanen/MPSS-UQ.git
 cd MPSS-UQ
 pip install .
@@ -13,7 +14,7 @@ pip install .
 
 Usage
 ---
-In the ``scripts/``-folder you will find an example inversion script which creates simulated data and then runs the inversion.
+In the ``examples/``-folder you will find an example inversion script which creates simulated data and then runs the inversion.
 
 This is a work in progress so things may change without notice.
 
