@@ -112,11 +112,12 @@ def plot_datafit(DMPS, output_measured, log10_N, ax):
     ax.set_ylabel('Counts (#)')
 
 
-def plot_marginalized_psd(DMPS, posterior_samples, ax, CI=95):
+def plot_marginalized_psd(DMPS, posterior_samples, ax, CI=95, num_samples=0):
     ''' A basic plot of the marginalized posterior of the PSD.
     
     Input:
         CI - percentage of the credible interval (0-100)
+        num_samples - number of individual posterior samples plot on top of the CI
     '''
     
     if CI < 0 or CI > 100:
@@ -140,15 +141,17 @@ def plot_marginalized_psd(DMPS, posterior_samples, ax, CI=95):
                           facecolor='C0', label=f'{CI} % credible interval')
     
     # Plot samples
-    n_jump = int(np.ceil(posterior_samples.shape[0] / 50))
-    ax.plot(DMPS.d_m * 1e9, samples_dNdlogdp[::n_jump, :].T,
-                         color='C2',
-                         linewidth=1,
-                         alpha=0.2
-                         )
-    ax.plot(DMPS.d_m * 1e9, samples_dNdlogdp[-1, :], color='C2', linewidth=1, alpha=0.2,
-                         label='Posterior samples'
-                         )
+    if num_samples > 0:
+        if num_samples > 1:
+            n_jump = int(np.ceil(posterior_samples.shape[0] / (num_samples - 1)))
+            ax.plot(DMPS.d_m * 1e9, samples_dNdlogdp[::n_jump, :].T,
+                                 color='C2',
+                                 linewidth=1,
+                                 alpha=0.2
+                                 )
+        ax.plot(DMPS.d_m * 1e9, samples_dNdlogdp[-1, :], color='C2', linewidth=1, alpha=0.2,
+                             label='Posterior samples'
+                             )
     
     # TODO Note for the paper: All estimates have to be calculated in the log-space and only then
     # transformed to the linear space. At least is looks wrong otherwise...
