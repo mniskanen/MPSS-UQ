@@ -19,6 +19,7 @@ UEF-A20:     # configuration name
   CPC_measuring_time: 5    # measurement time per one output channel [s]
   CPC_output_type: counts  # output type (counts/concentration)
   # coefficients for using the ACTRIS type counting efficiency equation:
+  # a * (1 - exp(log(2) * ((b - d_p) / (dp50 - b))))
   CPC_a: 0.96      # plateau efficiency [0 - 1]
   CPC_b: 6.86      # diameter where the curve intersects the diameter-axis [nm]
   CPC_dp50: 10.08  # 50 % counting efficiency diameter [nm]
