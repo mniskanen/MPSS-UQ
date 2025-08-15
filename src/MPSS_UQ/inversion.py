@@ -171,8 +171,8 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
         ion_ratio_std = 0.2 / 2
         
     else:
+        ion_ratio = 1.0
         n_ion_ratios = 1
-        ion_ratio_std = 0.0
     
     
     n_invert = n_mobilities * n_ion_ratios
@@ -188,6 +188,9 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
     posterior_cov_Ls = np.zeros((n_invert, n_bins, n_bins)) * np.nan
     log_posts = np.zeros((n_gridpoints_pos, n_gridpoints_neg)) * np.nan
     
+    # Starting guess for the Laplace approximation
+    N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
+    
     pbar = tqdm(position=0, desc='Marginalizing')
     pbar.reset(total = n_invert)
     i = 0
@@ -198,7 +201,8 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
             
             for _ in range(n_ion_ratios):
                 
-                ion_ratio = np.random.normal(loc=1.0, scale=ion_ratio_std)
+                if marginalize_ion_ratio:
+                    ion_ratio = np.random.normal(loc=1.0, scale=ion_ratio_std)
                 
                 # Update the charging model and DMPS system matrix
                 # t1 = perf_counter()
@@ -209,13 +213,18 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
                 # Calculate the Laplace approximation
                 MAP_estimates[i], posterior_covs[i] = Laplace_approximation(DMPS,
                                                                             prior,
-                                                                            measurement
+                                                                            measurement,
+                                                                            N_start=N_guess,
                                                                             )
                 
                 # Calculate the Cholesky factor
                 posterior_cov_Ls[i] = np.linalg.cholesky(posterior_covs[i])
                 # t3 = perf_counter()
                 # total_time_laplace += t3 - t2
+                
+                # Use the current MAP estimate as a starting guess for the next one
+                # (it _probably_ is quite close to the truth)
+                N_guess = MAP_estimates[i]
                 
                 i += 1
                 pbar.update(1)
@@ -225,7 +234,7 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
     
     # Possibly different probability for each mixture
     mixtures = np.arange(n_invert)
-    n_posterior_mixture_samples = 100000
+    n_posterior_mixture_samples = 50000
     log_posts_notnan = log_posts.flatten()
     log_posts_notnan = np.delete(log_posts_notnan, np.isnan(log_posts_notnan))
     
