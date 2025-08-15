@@ -4,7 +4,6 @@ import numpy as np
 import importlib.resources as resources
 
 from scipy.special import erf
-# from time import perf_counter
 
 from MPSS_UQ.chargingmodels import (LYFChargingModel,
                                     LYFInterpolator,
@@ -25,19 +24,17 @@ def dynamic_viscosity(temperature):
     return 1.458e-6 * temperature**1.5 / (temperature + 110.4)
 
 
-def mean_free_path_air(temperature):
+def mean_free_path_air(temperature, pressure):
     """ Calculate the mean free path of an air molecule for a given temperature. Assume that
     the air molecules consist of nitrogen only.
     """
-    # Air pressure (Pa)
-    p = 101325
     
     # Diameter of a nitrogen molecule (adjusted so that we get a mean free path of 68 nm for
     # temperature 20 C)
     d = 3.64e-10
-    # d = 3.711e-10
     
-    return BOLTZMANN_CONSTANT * temperature / (np.sqrt(2) * np.pi * d**2 * p)
+    return BOLTZMANN_CONSTANT * temperature / (np.sqrt(2) * np.pi * d**2 * pressure)
+
 
 def cunningham(Kn):
     """Compute the Cunningham slip correction factor for given Knudsen numbers Kn."""
@@ -194,7 +191,7 @@ class DifferentialMobilityParticleSizer():
         b = 0.2672
         c = 0.10079
         
-        Kn = mean_free_path_air(self.temperature) / (self.d_m_data * 0.5)
+        Kn = mean_free_path_air(self.temperature, self.pressure) / (self.d_m_data * 0.5)
         mu = dynamic_viscosity(self.temperature)
         Cc = cunningham(Kn)
         
@@ -454,9 +451,8 @@ class DifferentialMobilityParticleSizer():
         particle_charge is given as the number of elementary charges on the particle.
         '''
         
-        temperature = 273 + 20
-        Kn = 2 * mean_free_path_air(temperature) / d_m  # Knudsen number
-        eta = dynamic_viscosity(temperature)
+        Kn = 2 * mean_free_path_air(self.temperature, self.pressure) / d_m  # Knudsen number
+        eta = dynamic_viscosity(self.temperature)
         
         return np.abs(particle_charge) * EL_CHARGE * cunningham(Kn) / (3 * np.pi * eta * d_m)
     
