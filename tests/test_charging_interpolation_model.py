@@ -2,12 +2,12 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import importlib.resources as resources
 
 from time import perf_counter
 from tqdm import tqdm
 
 from MPSS_UQ.chargingmodels import LYFChargingModel, LYFInterpolator, LYFFluxInterpolator
-from MPSS_UQ.definitions import INTERPOLATOR_DIR
 
 
 def test_interpolation_accuracy():
@@ -21,7 +21,8 @@ def test_interpolation_accuracy():
                                       max_considered_charge=25
                                       )
     
-    flux_interpolator = LYFFluxInterpolator(f'{INTERPOLATOR_DIR}/interpolator_flux_60dm_307')
+    fname = resources.files('MPSS_UQ.data') / 'interpolator_flux_60dm_307'
+    flux_interpolator = LYFFluxInterpolator(fname)
     charger_interpolator = LYFChargingModel(d_m / 2,
                                             charges_output,
                                             flux_interpolator=flux_interpolator

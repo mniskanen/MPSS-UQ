@@ -3,10 +3,10 @@
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+import importlib.resources as resources
 
 from MPSS_UQ.chargingmodels import (LYFChargingModel, WiedensohlerChargingModel,
                                           LYFFluxInterpolator)
-from MPSS_UQ.definitions import INTERPOLATOR_DIR
 
 particle_radius = np.logspace(np.log10(5e-10), np.log10(1.25e-6), num=32)
 
@@ -14,7 +14,8 @@ charges_output = np.array([-5, -2, -1, 0, 1, 2, 5])
 
 W_cp = WiedensohlerChargingModel(particle_radius, charges_output).charging_probability()
 
-flux_interpolator = LYFFluxInterpolator(f'{INTERPOLATOR_DIR}/interpolator_flux_60dm_307')
+fname = resources.files('MPSS_UQ.data') / 'interpolator_flux_60dm_307'
+flux_interpolator = LYFFluxInterpolator(fname)
 LYF_charging_model = LYFChargingModel(particle_radius, charges_output,
                                       flux_interpolator=flux_interpolator
                                       )
