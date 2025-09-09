@@ -55,31 +55,9 @@ DMPS_prop['d_m_data'] = np.geomspace(6e-9, 800e-9, num=30) # d_min, d_max, num_b
 # Step 2, option 1: Generate synthetic data
 # =============================================================================
 
-# Set up a separate DMPS for generating the data
-DMPS_prop_datagen = DMPS_prop.copy()
-
-# Mobility diameters that are used to represent the true PSD
-DMPS_prop_datagen['d_m'] = np.geomspace(1e-9, 2500e-9, num=500)
-
-# Which bipolar charging model to use
-DMPS_prop_datagen['charging_model'] = 'LYF-interp'
-
-# Maximum considered number of multiple charges
-DMPS_prop_datagen['max_charge'] = 8
-
-# Create the data generating DMPS object
-DMPS_datagen = DifferentialMobilityParticleSizer(DMPS_prop_datagen)
-
-# Set charger ion properties for the measurement (if using the LYF model)
-pos_ion_mobility = 1.4e-4
-neg_ion_mobility = 1.9e-4
-ion_ratio = 1.0
-DMPS_datagen.update_charger_ion_properties(pos_ion_mobility, neg_ion_mobility, ion_ratio)
-
-# Create the measurement
 # Predefined PSD scenarios are:
 #     Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert
-measurement = generate_DMPS_measurement(DMPS_datagen, scenario='Urban')
+measurement = generate_DMPS_measurement(DMPS_prop.copy(), scenario='Urban')
 
 
 # =============================================================================
@@ -124,6 +102,10 @@ DMPS_prop['max_charge'] = 4
 # Create the DMPS object used in the inversion
 DMPS_inv = DifferentialMobilityParticleSizer(DMPS_prop)
 
+DMPS_inv.set_operating_conditions(measurement['temperature'],
+                                  measurement['pressure']
+                                  )
+
 # Laplace approximation
 N_MAP_W, post_cov_W = Laplace_approximation(DMPS_inv, prior, measurement)
 
@@ -137,6 +119,10 @@ DMPS_properties_marg = DMPS_prop.copy()
 DMPS_properties_marg['charging_model'] = 'LYF-interp-fast'
 
 DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg)
+
+DMPS_marg.set_operating_conditions(measurement['temperature'],
+                                   measurement['pressure']
+                                   )
 
 # Marginalize over charger ion mobilities
 posterior_samples = Laplace_approximation_marginalize(DMPS_marg, prior, measurement,

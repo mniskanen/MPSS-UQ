@@ -4,7 +4,6 @@ import numpy as np
 
 from scipy.linalg import toeplitz
 from tqdm import tqdm
-# from time import perf_counter
 
 # Prevent the system from throttling down the CPU by giving any process that uses
 # inversion methods a higher priority
@@ -171,7 +170,6 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
         ion_ratio_std = 0.2 / 2
         
     else:
-        ion_ratio = 1.0
         n_ion_ratios = 1
     
     
@@ -203,12 +201,12 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
                 
                 if marginalize_ion_ratio:
                     ion_ratio = np.random.normal(loc=1.0, scale=ion_ratio_std)
-                
-                # Update the charging model and DMPS system matrix
-                # t1 = perf_counter()
-                DMPS.update_charger_ion_properties(pos_ion_mobility, neg_ion_mobility, ion_ratio)
-                # t2 = perf_counter()
-                # total_time_mobility += t2 - t1
+                    DMPS.set_charger_properties(pos_ion_mobility,
+                                                neg_ion_mobility,
+                                                ion_ratio
+                                                )
+                else:
+                    DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
                 
                 # Calculate the Laplace approximation
                 MAP_estimates[i], posterior_covs[i] = Laplace_approximation(DMPS,
@@ -219,8 +217,6 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
                 
                 # Calculate the Cholesky factor
                 posterior_cov_Ls[i] = np.linalg.cholesky(posterior_covs[i])
-                # t3 = perf_counter()
-                # total_time_laplace += t3 - t2
                 
                 # Use the current MAP estimate as a starting guess for the next one
                 # (it _probably_ is quite close to the truth)
@@ -228,9 +224,6 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
                 
                 i += 1
                 pbar.update(1)
-    
-    # print(f'\nTotal time for mobility calculations: {total_time_mobility : .3f} sec')
-    # print(f'Total time for Laplace calculations: {total_time_laplace : .3f} sec')
     
     # Possibly different probability for each mixture
     mixtures = np.arange(n_invert)

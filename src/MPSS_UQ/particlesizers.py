@@ -62,8 +62,6 @@ class DifferentialMobilityParticleSizer():
         self.Qa *= lpm_to_m3s
         self.Qc *= lpm_to_m3s
         
-        self.temperature = properties['T']  # Internal temperature (K)
-        self.pressure = properties['P']  # Internal pressure (Pa)
         self.R1 = properties['R1']  # Inner radius of the DMA (m)
         self.R2 = properties['R2']  # Outer radius of the DMA (m)
         self.length = properties['L']  # Length of the DMA (m)
@@ -91,52 +89,93 @@ class DifferentialMobilityParticleSizer():
             self.charges = -self.charges
             self.charges.sort()  # Charges need to be in the right order
         
+        self.temperature = None  # Internal temperature (K)
+        self.pressure = None  # Internal pressure (Pa)
+        
         # Some derived values used later on
         self.compute_DMA_characteristic_values()
-        
-        # Mobilities we want to classify
-        self.Z_targets = self.compute_electrical_mobility(self.d_m_data, 1)
         
         # Particle charging model
         self.initialize_charging_model(properties['charging_model'])
         
-        # CPC
-        self.CPC = CondensationParticleCounter(self.d_m_data, properties)
-        
+        # Preallocate the system matrix
         self.system_matrix = np.zeros((self.d_m_data.shape[0], self.d_m.shape[0]))
         
+        # Initialize the CPC
+        self.CPC = CondensationParticleCounter(self.d_m_data, properties)
+        
+        self.operating_conditions_set = False
+        
+        if self.charging_model_name == 'Wiedensohler':
+            # The Wiedensohler approximation requires no input parameters so we can
+            # calculate it already here
+            self.charging_probability = self.compute_charging_probability()
+            self.charger_conditions_set = True
+            
+        else:
+            self.charger_conditions_set = False
+    
+    
+    def __str__(self):
+        
+        return (f"At {self.temperature - 273.15} °C and {self.pressure} Pa.\n" +
+                f"Charging model: {self.charging_model_name}.\n" +
+                f"CPC counting efficiency curve: {self.CPC.counting_efficiency_type}.\n"
+                )
+    
+    
+    def set_operating_conditions(self, temperature, pressure):
+        ''' Set the operating temperature and pressure, then update all parts of the MPSS these
+        values affect. Finally assemble the updated system matrix. '''
+        
+        self.temperature = temperature  # Internal temperature (K)
+        self.pressure = pressure  # Internal pressure (Pa)
+        
+        # Mobilities we want to classify
+        self.Z_targets = self.compute_electrical_mobility(self.d_m_data, 1)
+        
         self.transfer_function = self.compute_transfer_function()
-        self.charging_probability = self.compute_charging_probability()
         self.penetration_efficiency = self.compute_penetration_efficiency()
-        self.update_system_matrix()
         
-        print(f"Using the {self.charging_model_name} charging model and " +
-              f"a/an {self.CPC.counting_efficiency_type} CPC counting efficiency curve.")
-    
-    
-    def forward_model(self, log10_N):
-        ''' Run a particle population N through the measurement system and output counts. '''
+        # Only update the system matrix if the charging probability has been computed
+        if self.charger_conditions_set:
+            self._update_system_matrix()
         
-        return self.system_matrix @ 10**log10_N
+        self.operating_conditions_set = True
     
     
-    def update_charger_ion_properties(self, pos_ion_mobility, neg_ion_mobility, ion_ratio):
-        ''' Calculate the charging probability with the inputted ion mobilities and ratio,
-        and update the DMA system matrix.
+    def set_charger_properties(self, *args):
+        ''' Calculate charging probability using input properties. Depending on the chosen
+        charging model, the input parameters are the positive and negative ion mobilities and
+        the ion ratio.
+        Finally assemble the updated system matrix.
         '''
         
         if self.charging_model_name == 'Wiedensohler':
             raise Exception('Cannot change charger properties with the Wiedensohler model')
         
-        self.charging_probability = self.compute_charging_probability(pos_ion_mobility,
-                                                                      neg_ion_mobility,
-                                                                      ion_ratio,
-                                                                      )
+        self.charging_probability = self.compute_charging_probability(*args)
         
-        self.update_system_matrix()
+        # Only update the system matrix if the operating conditions have been set
+        if self.operating_conditions_set:
+            self._update_system_matrix()
+        
+        self.charger_conditions_set = True
     
     
-    def update_system_matrix(self, charging_probability=None):
+    def forward_model(self, log10_N):
+        ''' Run a sample with log size distribution log10_N through the measurement system. '''
+        
+        if not self.operating_conditions_set:
+            raise RuntimeError("Operating conditions (temperature, pressure) must be set " +
+                               "before running the forward model.")
+        if not self.charger_conditions_set:
+            raise RuntimeError("Charger conditions must be set before running the forward model.")
+        
+        return self.system_matrix @ 10**log10_N
+    
+    
+    def _update_system_matrix(self, charging_probability=None):
         ''' Calculate the system matrix, a matrix that models the whole DMA+CPC system
         including the transfer function, and charging, penetration, and counting efficiencies.
         Using this function requires that the individual parts of the system function have been

@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
+
 
 def lognormal_distribution(d_m, N, median, log_std):
     ''' Returns the lognormal distribution with the specified properties. '''
@@ -11,11 +13,38 @@ def lognormal_distribution(d_m, N, median, log_std):
         )
 
 
-def generate_DMPS_measurement(DMPS, scenario='Urban'):
-    ''' Simulate measurement data using the DMPS model.
+def generate_DMPS_measurement(DMPS_prop, scenario='Urban'):
+    ''' Simulate measurement data using a DMPS model.
+    Input:
+        DMPS_prop - the DMPS properties dictionary
+        scenario - name of the true PSD we simulate
     Predefined PSD scenarios are:
         Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert.
     '''
+    
+    # Mobility diameters that are used to represent the true PSD
+    DMPS_prop['d_m'] = np.geomspace(1e-9, 2500e-9, num=500)
+
+    # Which bipolar charging model to use
+    DMPS_prop['charging_model'] = 'LYF-interp'
+
+    # Maximum considered number of multiple charges
+    DMPS_prop['max_charge'] = 8
+
+    # Create the data generating DMPS object
+    DMPS = DifferentialMobilityParticleSizer(DMPS_prop)
+    
+    # Set the ambient temperature and pressure
+    temperature = 292.15  # [K]
+    pressure = 101325  # [Pa]
+    
+    DMPS.set_operating_conditions(temperature, pressure)
+
+    # Set charger ion properties for the measurement (if using the LYF model)
+    pos_ion_mobility = 1.4e-4
+    neg_ion_mobility = 1.9e-4
+    ion_ratio = 1.0
+    DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility, ion_ratio)
     
     # from MPSS_UQ.plotfunctions import plot_system_matrix
     # plot_system_matrix(DMPS)
@@ -88,5 +117,9 @@ def generate_DMPS_measurement(DMPS, scenario='Urban'):
     measurement['noise_cov'] = np.diag(np.clip(measurement['output'], 1, np.inf))
     measurement['inv_noise_cov'] = np.diag(1 / np.diag(measurement['noise_cov']))
     measurement['noise_L'] = np.diag(np.sqrt(np.diag(measurement['inv_noise_cov'])))
+    
+    # Give environmental parameters
+    measurement['temperature'] = temperature  # [K]
+    measurement['pressure'] = pressure # [Pa]
     
     return measurement
