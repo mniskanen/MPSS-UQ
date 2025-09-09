@@ -35,7 +35,7 @@ def generate_DMPS_measurement(DMPS_prop, scenario='Urban'):
     DMPS = DifferentialMobilityParticleSizer(DMPS_prop)
     
     # Set the ambient temperature and pressure
-    temperature = 292.15  # [K]
+    temperature = 293.15  # [K]
     pressure = 101325  # [Pa]
     
     DMPS.set_operating_conditions(temperature, pressure)

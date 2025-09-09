@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
-from MPSS_UQ.inversion import (Laplace_approximation,
+from MPSS_UQ.inversion import (compute_posterior,
                                Laplace_approximation_marginalize,
                                smoothness_prior
                                )
@@ -28,7 +28,7 @@ with loading the measured data.
 # =============================================================================
 
 # Load a DMPS configuration file. This includes basic geometry and flow rates information
-# on the DMPS. The file DMPS_properties.json should be in the same folder as this script.
+# on the DMPS. The file DMPS_properties.yaml should be in the same folder as this script.
 with open("DMPS_properties.yaml", "r") as f:
     DMPS_prop = yaml.safe_load(f)
 
@@ -106,8 +106,8 @@ DMPS_inv.set_operating_conditions(measurement['temperature'],
                                   measurement['pressure']
                                   )
 
-# Laplace approximation
-N_MAP_W, post_cov_W = Laplace_approximation(DMPS_inv, prior, measurement)
+CI_percent = 95
+N_MAP, CI_lower, CI_upper = compute_posterior(DMPS_inv, prior, measurement, CI=CI_percent)
 
 
 # =============================================================================
@@ -140,12 +140,11 @@ fig, axs = plt.subplots(1, 2, num=1, clear=True)
 fig.suptitle('True and estimated PSDs')
 
 binwidth = np.log10(DMPS_inv.d_m[1]) - np.log10(DMPS_inv.d_m[0])
-post_std = np.sqrt(np.diag(post_cov_W))
 axs[0].fill_between(DMPS_inv.d_m * 1e9,
-                    10**(N_MAP_W + 2 * post_std) / binwidth,
-                    10**(N_MAP_W - 2 * post_std) / binwidth,
-                    alpha=0.25, facecolor='C0', label='95 % credible interval')
-plot_psd(axs[0], DMPS_inv.d_m, N=10**N_MAP_W, linestyle='--', color='k', label='MAP estimate')
+                    CI_upper / binwidth,
+                    CI_lower / binwidth,
+                    alpha=0.25, facecolor='C0', label=f'{CI_percent} % credible interval')
+plot_psd(axs[0], DMPS_inv.d_m, N=N_MAP, linestyle='-', color='C0', label='MAP estimate')
 plot_psd(axs[0], measurement['d_m'], n=measurement['n_true'], color='k', label='Truth')
 
 axs[0].set_yscale('linear')
@@ -155,7 +154,7 @@ axs[0].legend()
 axs[0].set_title('a) MAP estimate, Wiedensohler charging model', loc='left')
 
 
-plot_marginalized_psd(DMPS_marg, posterior_samples, axs[1], CI=95)
+plot_marginalized_psd(DMPS_marg, posterior_samples, axs[1], CI=CI_percent)
 
 axs[1].plot(measurement['d_m'] * 1e9, measurement['n_true'], 'k-', label='Truth')
 axs[1].set_yscale('linear')

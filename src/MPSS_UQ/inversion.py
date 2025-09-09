@@ -3,6 +3,7 @@
 import numpy as np
 
 from scipy.linalg import toeplitz
+from scipy.stats import norm
 from tqdm import tqdm
 
 # Prevent the system from throttling down the CPU by giving any process that uses
@@ -10,6 +11,22 @@ from tqdm import tqdm
 import psutil, os
 p = psutil.Process(os.getpid())
 p.nice(psutil.HIGH_PRIORITY_CLASS)
+
+
+def compute_posterior(DMPS, prior, measurement, CI=95):
+    ''' Compute and return the expected value and associated credible intervals of the posterior
+    with the assumption of the charging probability specified in the DMPS model. '''
+    
+    MAP_est, post_cov = Laplace_approximation(DMPS, prior, measurement)
+    
+    # Calculate the requested credible interval estimates
+    sigma = np.sqrt(np.diag(post_cov))
+    k = norm.ppf(0.5 + CI / 100 / 2)
+    
+    CI_lower = 10**(MAP_est - k * sigma)
+    CI_upper = 10**(MAP_est + k * sigma)
+    
+    return 10**MAP_est, CI_lower, CI_upper
 
 
 def log_post(vals, DMPS, L_noise, prior, measurement):
@@ -136,9 +153,12 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
     return N_guess, posterior_covariance
 
 
-def Laplace_approximation_marginalize(DMPS, prior, measurement,
+def Laplace_approximation_marginalize(DMPS,
+                                      prior,
+                                      measurement,
                                       marginalize_ion_mobility,
-                                      marginalize_ion_ratio):
+                                      marginalize_ion_ratio,
+                                      ):
     
     ''' Calculate the marginalized posterior of the PSD. Can marginalize over the ion mobilities
     and/or the ratio of positive to negative ions.
@@ -147,7 +167,6 @@ def Laplace_approximation_marginalize(DMPS, prior, measurement,
         DMPS - an initialized instance of the DifferentialMobilityParticleSizer class
         prior - a dictionary with the prior specifications for the PSD
         measurement - a dictionary with data on the measurement
-        ax - axes of where we want to plot the results
         marginalize_ion_mobility - True or False
         marginalize_ion_ratio - True or False
     
