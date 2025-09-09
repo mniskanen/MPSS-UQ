@@ -68,18 +68,30 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
     
     '''
     
+    # Compare dimensions of measurement and prior covariances to decide if we should use the
+    # Woodbury identity to compute the inverse in the formula for posterior covariance
+    if prior['covariance'].shape[0] > measurement['noise_cov'].shape[0]:
+        use_inversion_lemma = True
+    else:
+        use_inversion_lemma = False
+    
     if N_start is None:
         N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
     else:
         N_guess = N_start
+    
     y_model = DMPS.forward_model(N_guess)
     J = DMPS.system_matrix @ np.diag(10**N_guess) * np.log(10)
     
-    # posterior_covariance = np.linalg.inv(J.T @ inv_noise_cov @ J + prior['inv_covariance'])
+    if use_inversion_lemma:
+        posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
+            measurement['noise_cov'] + J @ prior['covariance'] @ J.T
+            ) @ J @ prior['covariance']
+    else:
+        posterior_covariance = np.linalg.inv(J.T @ measurement['inv_noise_cov'] @ J
+                                             + prior['inv_covariance'])
     
-    posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
-        measurement['noise_cov'] + J @ prior['covariance'] @ J.T
-        ) @ J @ prior['covariance']
+    
     
     args = (DMPS, measurement['noise_L'], prior, measurement['output'])
     
@@ -106,9 +118,14 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
         
         y_model = DMPS.forward_model(N_guess)
         J = DMPS.system_matrix @ np.diag(10**N_guess) * np.log(10)
-        posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
-            measurement['noise_cov'] + J @ prior['covariance'] @ J.T
-            ) @ J @ prior['covariance']
+        
+        if use_inversion_lemma:
+            posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
+                measurement['noise_cov'] + J @ prior['covariance'] @ J.T
+                ) @ J @ prior['covariance']
+        else:
+            posterior_covariance = np.linalg.inv(J.T @ measurement['inv_noise_cov'] @ J
+                                                 + prior['inv_covariance'])
         
         i += 1
     
