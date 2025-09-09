@@ -131,16 +131,15 @@ def plot_marginalized_psd(DMPS, posterior_samples, ax, CI=95, num_samples=0):
     # Highest density intervals
     pr_plot = np.zeros((2, DMPS.d_m.shape[0]))
     for i in range(DMPS.d_m.shape[0]):
-        # breakpoint()
-        # pr_plot[:, i] = highest_density_interval(samples_dNdlogdp[:, i], CI / 100)
-        pr_plot[:, i] = highest_density_interval(np.log10(posterior_samples[:, i]), CI / 100)
+        pr_plot[:, i] = highest_density_interval(posterior_samples[:, i], CI / 100)
     
-    pr_plot = 10**pr_plot / binwidth
+    pr_plot = pr_plot / binwidth
     
-    ax.fill_between(DMPS.d_m * 1e9, pr_plot[1], pr_plot[0], alpha=0.25,
-                          facecolor='C0', label=f'{CI} % credible interval')
+    ax.fill_between(DMPS.d_m * 1e9, pr_plot[1], pr_plot[0],
+                    alpha=0.25, facecolor='C0', label=f'{CI} % credible interval'
+                    )
     
-    # Plot samples
+    # Optionally plot some samples
     if num_samples > 0:
         if num_samples > 1:
             n_jump = int(np.ceil(posterior_samples.shape[0] / (num_samples - 1)))
@@ -152,12 +151,8 @@ def plot_marginalized_psd(DMPS, posterior_samples, ax, CI=95, num_samples=0):
         ax.plot(DMPS.d_m * 1e9, samples_dNdlogdp[-1, :], color='C2', linewidth=1, alpha=0.2,
                              label='Posterior samples'
                              )
-    
-    # TODO Note for the paper: All estimates have to be calculated in the log-space and only then
-    # transformed to the linear space. At least is looks wrong otherwise...
-    mean_estimate = 10**np.mean(np.log10(posterior_samples), axis=0)
-    # mean_estimate = np.mean(posterior_samples, axis=0)
-    ax.plot(DMPS.d_m * 1e9, mean_estimate / binwidth, 'k--', label='Mean of posterior samples')
+    mean_estimate = np.mean(posterior_samples, axis=0)
+    ax.plot(DMPS.d_m * 1e9, mean_estimate / binwidth, 'C0-', label='Mean of posterior samples')
     
     ax.set_xscale('log')
     
