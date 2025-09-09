@@ -145,10 +145,17 @@ class DifferentialMobilityParticleSizer():
     
     
     def set_charger_properties(self, *args):
-        ''' Calculate charging probability using input properties. Depending on the chosen
-        charging model, the input parameters are the positive and negative ion mobilities and
-        the ion ratio.
-        Finally assemble the updated system matrix.
+        ''' Calculate charging probability using input properties, and assemble
+        the updated system matrix.
+        Required inputs depend on the chosen charging model:
+            
+        LYF-direct or LYF-interp:
+            args = (positive_ion_mobility, negative_ion_mobility, ion_ratio)
+        
+        LYF-interp-fast:
+            args = (positive_ion_mobility, negative_ion_mobility)
+        
+        ion_ratio is the ratio of positive to negative ions, assumed equal to 1 in LYF-interp-fast.
         '''
         
         if self.charging_model_name == 'Wiedensohler':
@@ -170,7 +177,7 @@ class DifferentialMobilityParticleSizer():
             raise RuntimeError("Operating conditions (temperature, pressure) must be set " +
                                "before running the forward model.")
         if not self.charger_conditions_set:
-            raise RuntimeError("Charger conditions must be set before running the forward model.")
+            raise RuntimeError("Charger properties must be set before running the forward model.")
         
         return self.system_matrix @ 10**log10_N
     
@@ -404,16 +411,16 @@ class DifferentialMobilityParticleSizer():
         The particle diameter input is optional; if it isn't given, the initialized
         self.d_m will be used. '''
         
-        # Default values for the ion properties
-        default_pos_mob = 1.35e-4
-        default_neg_mob = 1.60e-4
-        default_ratio = 1.0
-        
         if model == 'Wiedensohler':
             
             self.charger = WiedensohlerChargingModel(self.d_m / 2, self.charges)
             
-            def _charge_prob(self, pos_ion_mobility=None, neg_ion_mobility=None, ion_ratio=None):
+            def _charge_prob(*args):
+                if len(args) != 0:
+                        raise TypeError(
+                            f"{self.charging_model_name} " +
+                            f"expects 0 arguments, got {len(args)}"
+                            )
                 
                 return self.charger.charging_probability()
             
@@ -421,16 +428,14 @@ class DifferentialMobilityParticleSizer():
             
             self.charger = LYFChargingModel(self.d_m / 2, self.charges)
             
-            def _charge_prob(self, 
-                             pos_ion_mobility=default_pos_mob,
-                             neg_ion_mobility=default_neg_mob,
-                             ion_ratio=default_ratio,
-                             ):
+            def _charge_prob(*args):
+                if len(args) != 3:
+                        raise TypeError(
+                            f"{self.charging_model_name} " +
+                            f"expects 3 arguments, got {len(args)}"
+                            )
                 
-                return self.charger.charging_probability(pos_ion_mobility,
-                                                         neg_ion_mobility,
-                                                         ion_ratio
-                                                         )
+                return self.charger.charging_probability(*args)
             
         elif model == 'LYF-interp':
             
@@ -442,16 +447,14 @@ class DifferentialMobilityParticleSizer():
                                             flux_interpolator=flux_interpolator
                                             )
             
-            def _charge_prob(self,
-                             pos_ion_mobility=default_pos_mob,
-                             neg_ion_mobility=default_neg_mob,
-                             ion_ratio=default_ratio
-                             ):
-                
-                return self.charger.charging_probability(pos_ion_mobility,
-                                                         neg_ion_mobility,
-                                                         ion_ratio
-                                                         )
+            def _charge_prob(*args):
+                if len(args) != 3:
+                        raise TypeError(
+                            f"{self.charging_model_name} " +
+                            f"expects 3 arguments, got {len(args)}"
+                            )
+
+                return self.charger.charging_probability(*args)
         
         elif model == 'LYF-interp-fast':
             
@@ -459,12 +462,14 @@ class DifferentialMobilityParticleSizer():
             
             self.charger = LYFInterpolator(fname)
             
-            def _charge_prob(self,
-                             pos_ion_mobility=default_pos_mob,
-                             neg_ion_mobility=default_neg_mob,
-                             ion_ratio=None,
-                             ):
-                # TODO: add a test for ion ratio and then raise a valueerror
+            def _charge_prob(*args):
+                if len(args) != 2:
+                        raise TypeError(
+                            f"{self.charging_model_name} " +
+                            f"expects 2 arguments, got {len(args)}"
+                            )
+                
+                pos_ion_mobility, neg_ion_mobility = args
                 
                 return self.charger(self.d_m, pos_ion_mobility, neg_ion_mobility, self.charges)
         
@@ -475,13 +480,9 @@ class DifferentialMobilityParticleSizer():
         self.charging_model_name = model
     
     
-    def compute_charging_probability(self,
-                                     pos_ion_mobility=1.35e-4,
-                                     neg_ion_mobility=1.60e-4,
-                                     ion_ratio=1.0,
-                                     ):
+    def compute_charging_probability(self, *args):
         
-        return self.charging_model(self, pos_ion_mobility, neg_ion_mobility, ion_ratio)
+        return self.charging_model(*args)
     
     
     def compute_electrical_mobility(self, d_m, particle_charge):
