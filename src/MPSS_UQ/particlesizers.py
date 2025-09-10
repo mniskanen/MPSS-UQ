@@ -381,12 +381,6 @@ class DifferentialMobilityParticleSizer():
                         start_idx = d_m_idx * n_intpts_per_bin
                         end_idx = (d_m_idx + 1) * n_intpts_per_bin + 1
                         
-                        # tf_integral = 0.5 * np.sum(
-                        #     (tf_vals[start_idx + 1 : end_idx] + tf_vals[start_idx : end_idx - 1])
-                        #     * (np.log10(d_m_intpts[start_idx + 1 : end_idx])
-                        #        - np.log10(d_m_intpts[start_idx : end_idx - 1])
-                        #        )
-                        #     ) / binwidth
                         tf_integral = np.sum(
                             (tf_vals[start_idx: end_idx] * weights) * dx
                             ) / binwidth
