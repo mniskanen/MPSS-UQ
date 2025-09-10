@@ -95,15 +95,15 @@ prior = smoothness_prior(DMPS_prop['d_m'], expected_value,
 # Step 4: Carry out inversion - Option 1: Laplace approximation
 # =============================================================================
 
-# Charging model set up
+# Choose a charging model
 DMPS_prop['charging_model'] = 'Wiedensohler'
 DMPS_prop['max_charge'] = 4
 
 # Create the DMPS object used in the inversion
 DMPS_inv = DifferentialMobilityParticleSizer(DMPS_prop)
 
-DMPS_inv.set_operating_conditions(measurement['temperature'],
-                                  measurement['pressure']
+DMPS_inv.set_operating_conditions(measurement.temperature,
+                                  measurement.pressure
                                   )
 
 CI_percent = 95
@@ -120,8 +120,8 @@ DMPS_properties_marg['charging_model'] = 'LYF-interp-fast'
 
 DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg)
 
-DMPS_marg.set_operating_conditions(measurement['temperature'],
-                                   measurement['pressure']
+DMPS_marg.set_operating_conditions(measurement.temperature,
+                                   measurement.pressure
                                    )
 
 # Marginalize over charger ion mobilities
@@ -145,7 +145,7 @@ axs[0].fill_between(DMPS_inv.d_m * 1e9,
                     CI_lower / binwidth,
                     alpha=0.25, facecolor='C0', label=f'{CI_percent} % credible interval')
 plot_psd(axs[0], DMPS_inv.d_m, N=N_MAP, linestyle='-', color='C0', label='MAP estimate')
-plot_psd(axs[0], measurement['d_m'], n=measurement['n_true'], color='k', label='Truth')
+plot_psd(axs[0], measurement.d_m_truth, n=measurement.n_true, color='k', label='Truth')
 
 axs[0].set_yscale('linear')
 axs[0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
@@ -156,7 +156,7 @@ axs[0].set_title('a) MAP estimate, Wiedensohler charging model', loc='left')
 
 plot_marginalized_psd(DMPS_marg, posterior_samples, axs[1], CI=CI_percent)
 
-axs[1].plot(measurement['d_m'] * 1e9, measurement['n_true'], 'k-', label='Truth')
+axs[1].plot(measurement.d_m_truth * 1e9, measurement.n_true, 'k-', label='Truth')
 axs[1].set_yscale('linear')
 axs[1].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
 axs[1].grid('on')

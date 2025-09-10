@@ -3,6 +3,7 @@
 import numpy as np
 
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
+from MPSS_UQ.measurement_data import Measurement
 
 
 def lognormal_distribution(d_m, N, median, log_std):
@@ -101,25 +102,19 @@ def generate_DMPS_measurement(DMPS_prop, scenario='Urban'):
     rng = np.random.default_rng(seed=1)
     DMPS_output = rng.poisson(lam=DMPS_output_noiseless)
     
-    # Collect into a dictionary
-    measurement = {
-        'scenario' : scenario,
-        'output' : DMPS_output,  # can be either counts or concentration depending on the settings
-        'output_noiseless' : DMPS_output_noiseless,
-        'N_true' : N_true,
-        'n_true' : n_true,
-        'binwidth' : binwidth,
-        'd_m' : DMPS.d_m,
-        'd_m_data' : DMPS.d_m_data,
-        }
+    # Create a Measurement object
+    measurement = Measurement(None,
+                              DMPS.d_m_data,
+                              DMPS_output,
+                              'counts',
+                              temperature,
+                              pressure,
+                              N_true=N_true,
+                              n_true=n_true,
+                              scenario=scenario,
+                              d_m_truth=DMPS_prop['d_m'],
+                              )
     
-    # Add noise parameters
-    measurement['noise_cov'] = np.diag(np.clip(measurement['output'], 1, np.inf))
-    measurement['inv_noise_cov'] = np.diag(1 / np.diag(measurement['noise_cov']))
-    measurement['noise_L'] = np.diag(np.sqrt(np.diag(measurement['inv_noise_cov'])))
-    
-    # Give environmental parameters
-    measurement['temperature'] = temperature  # [K]
-    measurement['pressure'] = pressure # [Pa]
+    measurement.preprocess()
     
     return measurement

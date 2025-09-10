@@ -6,8 +6,14 @@ import numpy as np
 
 
 class Measurement():
+    ''' A class to store a _single_ measurement. This is given to the inversion routines.
+    kwargs can be used to give optional input values, such as the true N in case of simulated
+    data (see allowed_optional_keys).
+    '''
+    allowed_optional_keys = {'N_true', 'n_true', 'scenario', 'binwidth', 'd_m_truth'}
     
-    def __init__(self, datetime, d_m_data, MPSS_output, output_type, temperature, pressure):
+    def __init__(self, datetime, d_m_data, MPSS_output, output_type, temperature, pressure,
+                 **kwargs):
         
         self.datetime = datetime
         self.d_m_data = d_m_data
@@ -15,6 +21,12 @@ class Measurement():
         self.output_type = output_type
         self.temperature = temperature
         self.pressure = pressure
+        
+        for key, value in kwargs.items():
+            if key in self.allowed_optional_keys:
+                setattr(self, key, value)
+            else:
+                raise ValueError(f'Unexpected keyword argument: {key}')
     
     
     def compute_noise_statistics(self):
