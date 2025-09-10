@@ -29,10 +29,10 @@ def compute_posterior(DMPS, prior, measurement, CI=95):
     return 10**MAP_est, CI_lower, CI_upper
 
 
-def log_post(vals, DMPS, L_noise, prior, measurement):
+def log_post(vals, DMPS, L_noise, prior, y_meas):
     ''' Compute the logarithm of the (non-normalized) posterior. '''
     
-    return -0.5 * np.linalg.norm(L_noise @ (measurement - DMPS.forward_model(vals)))**2 \
+    return -0.5 * np.linalg.norm(L_noise @ (y_meas - DMPS.forward_model(vals)))**2 \
         - 0.5 * np.linalg.norm(prior['L'] @ (vals - prior['mean']))**2
 
 
@@ -79,15 +79,15 @@ def smoothness_prior(d_m, mean, correlation_length, standard_deviation):
 
 def Laplace_approximation(DMPS, prior, measurement, N_start=None):
     ''' Compute the MAP estimate and Gaussian approximation to the posterior.
-    This function assumes a positivity constraint in the form of a log10 transformation.
+    This function assumes a positivity constraint in the form of a log10 transformation,
+    and hence the returned values are given in log10-space.
     
-    N_start, an initial guess for the inversion of log10(N), is an optional input.
-    
+    The initial guess N_start is an optional input.
     '''
     
     # Compare dimensions of measurement and prior covariances to decide if we should use the
     # Woodbury identity to compute the inverse in the formula for posterior covariance
-    if prior['covariance'].shape[0] > measurement['noise_cov'].shape[0]:
+    if prior['covariance'].shape[0] > measurement.noise_cov.shape[0]:
         use_inversion_lemma = True
     else:
         use_inversion_lemma = False
@@ -102,15 +102,15 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
     
     if use_inversion_lemma:
         posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
-            measurement['noise_cov'] + J @ prior['covariance'] @ J.T
+            measurement.noise_cov + J @ prior['covariance'] @ J.T
             ) @ J @ prior['covariance']
     else:
-        posterior_covariance = np.linalg.inv(J.T @ measurement['inv_noise_cov'] @ J
+        posterior_covariance = np.linalg.inv(J.T @ measurement.inv_noise_cov @ J
                                              + prior['inv_covariance'])
     
     
     
-    args = (DMPS, measurement['noise_L'], prior, measurement['output'])
+    args = (DMPS, measurement.noise_L, prior, measurement.output)
     
     i = 0
     max_iter = 20
@@ -118,10 +118,10 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
     enough_improvement = True
     required_improvement = 1e-6  # Minimum relative change in functional to keep iterating
     f_values = np.zeros(max_iter + 1)
-    f_values[0] = -log_post(N_guess, DMPS, measurement['noise_L'], prior, measurement['output'])
+    f_values[0] = -log_post(N_guess, DMPS, measurement.noise_L, prior, measurement.output)
     
     while (i < max_iter) and not min_step_reached and enough_improvement:
-        gradient = (J.T @ measurement['inv_noise_cov']) @ (measurement['output'] - y_model) \
+        gradient = (J.T @ measurement.inv_noise_cov) @ (measurement.output - y_model) \
             - prior['inv_covariance'] @ (N_guess - prior['mean'])
         GN_dir = posterior_covariance @ gradient
         
@@ -138,10 +138,10 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
         
         if use_inversion_lemma:
             posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
-                measurement['noise_cov'] + J @ prior['covariance'] @ J.T
+                measurement.noise_cov + J @ prior['covariance'] @ J.T
                 ) @ J @ prior['covariance']
         else:
-            posterior_covariance = np.linalg.inv(J.T @ measurement['inv_noise_cov'] @ J
+            posterior_covariance = np.linalg.inv(J.T @ measurement.inv_noise_cov @ J
                                                  + prior['inv_covariance'])
         
         i += 1
