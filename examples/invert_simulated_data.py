@@ -15,16 +15,14 @@ from MPSS_UQ.plotfunctions import plot_psd, plot_marginalized_psd
 
 '''
 This script shows an example on how to use this package for inversion of DMPS data.
-In this example we use synthetic data generated with a DMPS model, but using real measurements
-is essentially identical to this example, one just needs to replace the first part of this script
-with loading the measured data.
+In this example we use synthetic data generated with a DMPS model.
 '''
 
 # The workflow consists of the following steps:
 
     
 # =============================================================================
-# Step 1: Load configuration to set up the DMPS model
+# Step 1: Load a configuration file to set up the DMPS model
 # =============================================================================
 
 # Load a DMPS configuration file. This includes basic geometry and flow rates information
@@ -52,17 +50,12 @@ DMPS_prop['d_m_data'] = np.geomspace(6e-9, 800e-9, num=30) # d_min, d_max, num_b
     
 
 # =============================================================================
-# Step 2, option 1: Generate synthetic data
+# Step 2: Generate synthetic data
 # =============================================================================
 
 # Predefined PSD scenarios are:
 #     Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert
 measurement = generate_DMPS_measurement(DMPS_prop.copy(), scenario='Urban')
-
-
-# =============================================================================
-# Step 2, option 2: Load measurement data
-# =============================================================================
 
 
 
