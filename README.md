@@ -14,7 +14,8 @@ pip install .
 
 Usage
 ---
-In the ``examples/``-folder you will find an example inversion script which creates simulated data and then runs the inversion.
+In the ``examples/``-folder you will find a script ``invert_simulated_data.py`` which shows the basic workflow for inverting a single MPSS measurement. The script creates simulated DMPS data, inverts it, and compares the inverted result to the true size distribution.
+An example of inverting a batch of real measurements is given in ``examples/realdata_UEF_test/``. In this case, we have around 8 days of DMPS measurements with a measured range of 10 to 800 nm covered every 5 minutes.
 
 This is a work in progress so things may change without notice.
 
