@@ -16,6 +16,8 @@ dependencies = [
 	"tqdm",
 	"dill",
 	"pyyaml",
+	"pandas",
+	"psutil",
 ]
 
 [build-system]
