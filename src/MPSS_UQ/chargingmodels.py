@@ -535,18 +535,8 @@ class LYFInterpolator():
         if saved_interpolator_file:
             self.load_interpolators(saved_interpolator_file)
             
-            # Get the interpolator bounds (assume each interpolator has the same bounds)
-            self.d_m_bounds = np.array([10**self.interpolator[0].grid[0][0],
-                                        10**self.interpolator[0].grid[0][-1]])
-            self.pos_ion_mobility_bounds = 1e-4 * np.array([10**self.interpolator[0].grid[1][0],
-                                                            10**self.interpolator[0].grid[1][-1]])
-            self.neg_ion_mobility_bounds = 1e-4 * np.array([10**self.interpolator[0].grid[2][0],
-                                                            10**self.interpolator[0].grid[2][-1]])
-            
-            # The charges modelled # TODO: make this a part of the saved file
-            self.charges_output = np.arange(-8, 8 + 1)
-            
         else:
+            self.values = None
             self.interpolator = None
     
     
@@ -580,61 +570,33 @@ class LYFInterpolator():
         self.n_mob = 10
         self.d_m = np.geomspace(self.d_m_bounds[0], self.d_m_bounds[1], self.n_d_m)
         self.pos_ion_mobility = np.linspace(self.pos_ion_mobility_bounds[0],
-                                            self.pos_ion_mobility_bounds[1], self.n_mob)
+                                            self.pos_ion_mobility_bounds[1],
+                                            self.n_mob
+                                            )
         self.neg_ion_mobility = np.linspace(self.neg_ion_mobility_bounds[0],
-                                            self.neg_ion_mobility_bounds[1],self.n_mob)
+                                            self.neg_ion_mobility_bounds[1],
+                                            self.n_mob
+                                            )
         
-        self.charging_model = LYFChargingModel(self.d_m / 2, self.charges_output,
-                                               max_considered_charge=25)
+        self.charging_model = LYFChargingModel(self.d_m / 2,
+                                               self.charges_output,
+                                               max_considered_charge=25
+                                               )
         
         # Multiple tqdm progress bars don't work with some IDEs, so disable the charging model one
         self.charging_model.show_progressbar = False
         
-        # Construct interpolators -----------
         # Preallocate
-        values = np.zeros((self.n_charges, self.n_d_m, self.n_mob, self.n_mob))
-        
-        # One interpolator per charge
-        self.interpolator = [ [] for _ in range(self.n_charges)]
+        self.values = np.zeros((self.n_charges, self.n_d_m, self.n_mob, self.n_mob))
         
         pbar = tqdm(position=0, desc='Creating interpolators')
         pbar.reset(total = self.n_mob * self.n_mob)
         for i, pos_ion_mob in enumerate(self.pos_ion_mobility):
             for j, neg_ion_mob in enumerate(self.neg_ion_mobility):
-                
-                # Negative ion mobility should be greater than that of the positive ion, but
-                # for the interpolator here leave a 5 % margin for numerical reasons
-                # if neg_ion_mob > 0.95 * pos_ion_mob:
-                values[:, :, i, j] = self.charging_model.charging_probability(pos_ion_mob,
-                                                                              neg_ion_mob
-                                                                              )
-                # else:
-                    # These values will never be interpolated so no need to run the model,
-                    # just set to something practically zero
-                    # values[:, i, j, :] = 1e-16 * np.ones_like(values[:, i, j, :])
-                
-                # # Set the minimum value to something that we can still take log of
-                # values[:, i, j, :] = np.clip(values[:, i, j, :], 1e-30, np.inf)
-                
-                # if np.any(values[:, i, j, :] == 0):
-                #     breakpoint()
-                
+                self.values[:, :, i, j] = self.charging_model.charging_probability(pos_ion_mob,
+                                                                                   neg_ion_mob,
+                                                                                   )
                 pbar.update(1)
-        
-        # Construct the interpolator objects, separately for each charge
-        # For numerical reasons, scale all inputs to approximately [-10, 10]
-        log_diam = np.log10(self.d_m)
-        scaled_pos_mob = self.pos_ion_mobility * 1e4
-        scaled_neg_mob = self.neg_ion_mobility * 1e4
-        
-        for i in range(self.n_charges):
-            try:
-                self.interpolator[i] = RegularGridInterpolator(
-                    (log_diam, scaled_pos_mob, scaled_neg_mob), np.log10(values[i]),
-                    method='cubic'
-                    )
-            except:
-                breakpoint()
         
         pbar.refresh()
     
@@ -643,7 +605,39 @@ class LYFInterpolator():
         ''' Evaluate the charging probabilities for the given input parameters.
         The input d_m can be a vector.
         '''
-        # TODO: could implement here a check for the input being within the interpolator bounds
+        # Check if the input is within the interpolator bounds
+        mask = np.array([
+            self.d_m_bounds[0] <= d_m[0] <= self.d_m_bounds[1],
+            self.d_m_bounds[0] <= d_m[-1] <= self.d_m_bounds[1],
+            self.pos_ion_mobility_bounds[0] <= pos_mobility <= self.pos_ion_mobility_bounds[1],
+            self.neg_ion_mobility_bounds[0] <= neg_mobility <= self.neg_ion_mobility_bounds[1],
+            ])
+        
+        if not np.all(mask):
+            # Get indices of invalid entries
+            invalid_indices = np.where(~mask)[0]
+            messages = []
+            for i in invalid_indices:
+                if i == 0:
+                    messages.append(
+                        f"d_m[0] = {d_m[0]} not in [{self.d_m_bounds[0]}, {self.d_m_bounds[1]}]"
+                        )
+                elif i == 1:
+                    messages.append(
+                        f"d_m[-1] = {d_m[-1]} not in [{self.d_m_bounds[0]}, {self.d_m_bounds[1]}]"
+                        )
+                elif i == 2:
+                    messages.append(
+                        f"pos_mobility = {pos_mobility} not in " + 
+                        f"[{self.pos_ion_mobility_bounds[0]}, {self.pos_ion_mobility_bounds[1]}]"
+                        )
+                elif i == 3:
+                    messages.append(
+                        f"neg_mobility = {neg_mobility} not in " + 
+                        f"[{self.neg_ion_mobility_bounds[0]}, {self.neg_ion_mobility_bounds[1]}]"
+                        )
+            raise ValueError("Input not within interpolator bounds:\n" + "\n".join(messages))
+
         
         if charges is None:
             # Return all charges
@@ -670,13 +664,52 @@ class LYFInterpolator():
     
     
     def save_interpolators(self, fname):
-        with open(fname, 'wb') as outp:
-            pickle.dump(self.interpolator, outp, pickle.HIGHEST_PROTOCOL)
+        
+        if self.values is None:
+            raise ValueError('Calculate the interpolator values first.')
+        else:
+            # For numerical reasons use log10-transformed values for the interpolator
+            log10_values = np.log10(self.values)
+        
+        # Save the evaluation points and corresponding values
+        np.savez(fname,
+                 allow_pickle=False,
+                 charges=self.charges_output,
+                 d_m_bounds=self.d_m_bounds,
+                 pos_ion_mobility_bounds=self.pos_ion_mobility_bounds,
+                 neg_ion_mobility_bounds=self.neg_ion_mobility_bounds,
+                 d_m_eval=self.d_m,
+                 pos_ion_mobility_eval=self.pos_ion_mobility,
+                 neg_ion_mobility_eval=self.neg_ion_mobility,
+                 log10_values=log10_values,
+                 )
     
     
     def load_interpolators(self, fname):
-        with open(fname, 'rb') as inp:
-            self.interpolator = pickle.load(inp)
+        
+        data = np.load(fname, allow_pickle=False)
+        
+        self.charges_output = data['charges']
+        self.d_m_bounds = data['d_m_bounds']
+        self.pos_ion_mobility_bounds = data['pos_ion_mobility_bounds']
+        self.neg_ion_mobility_bounds = data['neg_ion_mobility_bounds']
+        
+        # Create one interpolator per charge
+        self.interpolator = [ [] for _ in range(self.charges_output.shape[0])]
+        
+        # Construct the interpolator objects, separately for each charge
+        # For numerical reasons, scale all inputs to approximately [-10, 10]
+        log_diam = np.log10(data['d_m_eval'])
+        scaled_pos_mob = data['pos_ion_mobility_eval'] * 1e4
+        scaled_neg_mob = data['neg_ion_mobility_eval'] * 1e4
+        
+        # Construct the interpolator based on the saved values
+        for i in range(self.charges_output.shape[0]):
+            self.interpolator[i] = RegularGridInterpolator(
+                (log_diam, scaled_pos_mob, scaled_neg_mob),
+                data['log10_values'][i],
+                method='cubic'
+                )
 
 
 class LYFFluxInterpolator():
