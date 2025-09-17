@@ -9,6 +9,7 @@ from MPSS_UQ.chargingmodels import (LYFChargingModel,
                                     LYFInterpolator,
                                     LYFFluxInterpolator,
                                     WiedensohlerChargingModel,
+                                    ChargingModelWrapper,
                                     )
 
 
@@ -400,78 +401,31 @@ class DifferentialMobilityParticleSizer():
     
     
     def initialize_charging_model(self, model):
-        ''' The charging model needs to be created (or loaded) at first.
-        Here we also define some function wrappers to standardize the function call.
-        The particle diameter input is optional; if it isn't given, the initialized
-        self.d_m will be used. '''
-        
+        ''' Initialize the charging model and assign a standardized callable. '''
+    
+        self.charging_model_name = model
+    
         if model == 'Wiedensohler':
-            
             self.charger = WiedensohlerChargingModel(self.d_m / 2, self.charges)
-            
-            def _charge_prob(*args):
-                if len(args) != 0:
-                        raise TypeError(
-                            f"{self.charging_model_name} " +
-                            f"expects 0 arguments, got {len(args)}"
-                            )
-                
-                return self.charger.charging_probability()
-            
+    
         elif model == 'LYF-direct':
-            
             self.charger = LYFChargingModel(self.d_m / 2, self.charges)
-            
-            def _charge_prob(*args):
-                if len(args) != 3:
-                        raise TypeError(
-                            f"{self.charging_model_name} " +
-                            f"expects 3 arguments, got {len(args)}"
-                            )
-                
-                return self.charger.charging_probability(*args)
-            
+    
         elif model == 'LYF-interp':
-            
             fname = resources.files('MPSS_UQ.data') / 'interpolator_flux_60dm_307'
             flux_interpolator = LYFFluxInterpolator(fname)
-            
-            self.charger = LYFChargingModel(self.d_m / 2,
-                                            self.charges,
-                                            flux_interpolator=flux_interpolator
-                                            )
-            
-            def _charge_prob(*args):
-                if len(args) != 3:
-                        raise TypeError(
-                            f"{self.charging_model_name} " +
-                            f"expects 3 arguments, got {len(args)}"
-                            )
-
-                return self.charger.charging_probability(*args)
-        
+            self.charger = LYFChargingModel(
+                self.d_m / 2, self.charges, flux_interpolator=flux_interpolator
+                )
+    
         elif model == 'LYF-interp-fast':
-            
-            fname = resources.files('MPSS_UQ.data') / 'interpolator_charging_probability'
-            
+            fname = resources.files('MPSS_UQ.data') / 'charging_prob_interpolator_data.npz'
             self.charger = LYFInterpolator(fname)
-            
-            def _charge_prob(*args):
-                if len(args) != 2:
-                        raise TypeError(
-                            f"{self.charging_model_name} " +
-                            f"expects 2 arguments, got {len(args)}"
-                            )
-                
-                pos_ion_mobility, neg_ion_mobility = args
-                
-                return self.charger(self.d_m, pos_ion_mobility, neg_ion_mobility, self.charges)
-        
+    
         else:
             raise Exception('Unknown charging model')
-        
-        self.charging_model = _charge_prob
-        self.charging_model_name = model
+    
+        self.charging_model = ChargingModelWrapper(model, self.charger, self.d_m, self.charges)
     
     
     def compute_charging_probability(self, *args):

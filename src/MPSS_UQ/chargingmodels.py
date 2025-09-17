@@ -945,3 +945,39 @@ class WiedensohlerChargingModel():
                      )
         
         return cp
+
+
+class ChargingModelWrapper():
+    ''' A wrapper class for the charging models to make the DMPS class pickleable. '''
+    
+    def __init__(self, model_name, charger, d_m=None, charges=None):
+        
+        self.model_name = model_name
+        self.charger = charger
+        self.d_m = d_m
+        self.charges = charges
+
+    def __call__(self, *args):
+        
+        expected_args = {
+            'Wiedensohler': 0,
+            'LYF-direct': 3,
+            'LYF-interp': 3,
+            'LYF-interp-fast': 2
+        }
+
+        if len(args) != expected_args[self.model_name]:
+            raise TypeError(
+                f"{self.model_name} expects {expected_args[self.model_name]} arguments, " + 
+                f"got {len(args)}"
+            )
+
+        if self.model_name == 'Wiedensohler':
+            return self.charger.charging_probability()
+
+        elif self.model_name in ['LYF-direct', 'LYF-interp']:
+            return self.charger.charging_probability(*args)
+
+        elif self.model_name == 'LYF-interp-fast':
+            pos_ion_mobility, neg_ion_mobility = args
+            return self.charger(self.d_m, pos_ion_mobility, neg_ion_mobility, self.charges)
