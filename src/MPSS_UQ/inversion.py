@@ -333,3 +333,27 @@ def linesearch(fn, direction, N_0, previous_best_f_value, *args):
         min_step_reached = False
     
     return N_0 + dN_new, post_new, min_step_reached
+
+
+def highest_density_interval(samples, percentage):
+    """ Calculate the "percentage" highest probability density (HPD) region
+    from a set of samples. """
+    
+    # A corner case
+    if np.isclose(percentage, 1.0):
+        return np.array([np.min(samples), np.max(samples)])
+    
+    samples_sorted = np.sort(np.copy(samples))
+    n_tot = samples.shape[0]
+    
+    # Number of samples needed for the required percentage
+    n_samples = int(np.floor(percentage * n_tot))
+    
+    # Width of all intervals with the right number of samples
+    widths = samples_sorted[n_samples:] - samples_sorted[:-n_samples]
+    min_width_idx = np.argmin(widths)
+    
+    hdi_start = samples_sorted[min_width_idx]
+    hdi_end = samples_sorted[min_width_idx + n_samples]
+    
+    return np.array([hdi_start, hdi_end])
