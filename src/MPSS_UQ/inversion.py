@@ -158,6 +158,7 @@ def Laplace_approximation_marginalize(DMPS,
                                       measurement,
                                       marginalize_ion_mobility,
                                       marginalize_ion_ratio,
+                                      return_samples=False,
                                       ):
     
     ''' Calculate the marginalized posterior of the PSD. Can marginalize over the ion mobilities
@@ -167,11 +168,17 @@ def Laplace_approximation_marginalize(DMPS,
         DMPS - an initialized instance of the DifferentialMobilityParticleSizer class
         prior - a dictionary with the prior specifications for the PSD
         measurement - a dictionary with data on the measurement
-        marginalize_ion_mobility - True or False
-        marginalize_ion_ratio - True or False
+        marginalize_ion_mobility - True/False
+        marginalize_ion_ratio - True/False
+        return_samples - True/False: if True, the function returns samples from the posterior
+                         mixture. If False, the function returns the mean and covariance of the
+                         posterior calculated with an analytical formula from the means 
+                         and covariances of the individual mixtures.
     
     Output:
-        posterior_mixture_samples - a vector consisting of draws from the marginalized posterior.
+        posterior_mixture_samples - a vector consisting of draws from the marginalized posterior
+        OR
+        posterior_mean, posterior_covariance - of the mixture density.
     '''
     
     # Set seed for reproducibility
@@ -219,14 +226,15 @@ def Laplace_approximation_marginalize(DMPS,
     
     MAP_estimates = np.zeros((n_invert, n_bins))
     posterior_covs = np.zeros((n_invert, n_bins, n_bins))
-    posterior_cov_Ls = np.zeros((n_invert, n_bins, n_bins)) * np.nan
     log_posts = np.zeros((n_gridpoints_pos, n_gridpoints_neg)) * np.nan
+    if return_samples:
+        posterior_cov_Ls = np.zeros((n_invert, n_bins, n_bins)) * np.nan
     
     # Starting guess for the Laplace approximation
     N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
     
-    pbar = tqdm(position=0, desc='Marginalizing')
-    pbar.reset(total = n_invert)
+    # pbar = tqdm(position=0, desc='Marginalizing')
+    # pbar.reset(total = n_invert)
     i = 0
     for p_idx, pos_ion_mobility in enumerate(pos_ion_mobilities):
         for n_idx, neg_ion_mobility in enumerate(neg_ion_mobilities):
@@ -252,40 +260,63 @@ def Laplace_approximation_marginalize(DMPS,
                                                                             )
                 
                 # Calculate the Cholesky factor
-                posterior_cov_Ls[i] = np.linalg.cholesky(posterior_covs[i])
+                if return_samples:
+                    posterior_cov_Ls[i] = np.linalg.cholesky(posterior_covs[i])
                 
                 # Use the current MAP estimate as a starting guess for the next one
                 # (it _probably_ is quite close to the truth)
                 N_guess = MAP_estimates[i]
                 
                 i += 1
-                pbar.update(1)
+                # pbar.update(1)
     
     # Possibly different probability for each mixture
     mixtures = np.arange(n_invert)
-    n_posterior_mixture_samples = 50000
     log_posts_notnan = log_posts.flatten()
     log_posts_notnan = np.delete(log_posts_notnan, np.isnan(log_posts_notnan))
     
     mixture_probabilities = np.ones(mixtures.shape[0])
     mixture_probabilities /= np.sum(mixture_probabilities)
     
-    posterior_mixture_samples = np.zeros((n_posterior_mixture_samples, n_bins))
-    zeros = np.zeros(n_bins)
-    ones = np.ones(n_bins)
-    pbar = tqdm(position=0, desc='Sampling from the posterior mixture')
-    pbar.reset(total = n_posterior_mixture_samples)
-    for i in range(n_posterior_mixture_samples):
-        # First choose the component
-        component = rng.choice(mixtures, p=mixture_probabilities)
+    if return_samples:
+        n_posterior_mixture_samples = 50000
+        posterior_mixture_samples = np.zeros((n_posterior_mixture_samples, n_bins))
+        zeros = np.zeros(n_bins)
+        ones = np.ones(n_bins)
+        # pbar = tqdm(position=0, desc='Sampling from the posterior mixture')
+        # pbar.reset(total = n_posterior_mixture_samples)
+        for i in range(n_posterior_mixture_samples):
+            # First choose the component
+            component = rng.choice(mixtures, p=mixture_probabilities)
+            
+            # Then sample from that Gaussian
+            posterior_mixture_samples[i] = 10**(MAP_estimates[component] +
+                        posterior_cov_Ls[component] @ rng.normal(loc=zeros, scale=ones))
+            
+            # pbar.update(1)
         
-        # Then sample from that Gaussian
-        posterior_mixture_samples[i] = 10**(MAP_estimates[component] +
-                    posterior_cov_Ls[component] @ rng.normal(loc=zeros, scale=ones))
-        
-        pbar.update(1)
+        return posterior_mixture_samples
     
-    return posterior_mixture_samples
+    else:
+        posterior_means = np.zeros_like(MAP_estimates)
+        for i in range(n_invert):
+            posterior_means[i] = 10**MAP_estimates[i] * np.exp(
+                1 / 2 * np.diag(posterior_covs[i]) * np.log(10)**2
+                )
+        posterior_mean = mixture_probabilities @ posterior_means
+        posterior_covariances = np.zeros_like(posterior_covs)
+        for i in range(n_invert):
+            posterior_covariances[i] = np.outer(posterior_means[i], posterior_means[i]) * (
+                np.exp(posterior_covs[i] * np.log(10)**2) - 1
+                )
+        posterior_covariance = np.zeros_like(posterior_covs[0])
+        for i in range(n_invert):
+            mean_diff = MAP_estimates[i] - posterior_mean
+            posterior_covariance += mixture_probabilities[i] * (
+                posterior_covs[i] + np.outer(mean_diff, mean_diff)
+                )
+        
+        return posterior_mean, posterior_covariance
 
 
 def linesearch(fn, direction, N_0, previous_best_f_value, *args):
