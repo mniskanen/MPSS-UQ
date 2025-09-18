@@ -121,6 +121,7 @@ DMPS_marg.set_operating_conditions(measurement.temperature,
 posterior_samples = Laplace_approximation_marginalize(DMPS_marg, prior, measurement,
                                                       marginalize_ion_mobility=True,
                                                       marginalize_ion_ratio=False,
+                                                      return_samples=True
                                                       )
 
 

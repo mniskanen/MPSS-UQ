@@ -27,7 +27,7 @@ def generate_DMPS_measurement(DMPS_prop, scenario='Urban'):
     DMPS_prop['d_m'] = np.geomspace(1e-9, 2500e-9, num=500)
 
     # Which bipolar charging model to use
-    DMPS_prop['charging_model'] = 'LYF-interp'
+    DMPS_prop['charging_model'] = 'LYF-interp-fast'
 
     # Maximum considered number of multiple charges
     DMPS_prop['max_charge'] = 8
@@ -44,8 +44,8 @@ def generate_DMPS_measurement(DMPS_prop, scenario='Urban'):
     # Set charger ion properties for the measurement (if using the LYF model)
     pos_ion_mobility = 1.4e-4
     neg_ion_mobility = 1.9e-4
-    ion_ratio = 1.0
-    DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility, ion_ratio)
+    # ion_ratio = 1.0
+    DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility)#, ion_ratio)
     
     # from MPSS_UQ.plotfunctions import plot_system_matrix
     # plot_system_matrix(DMPS)
