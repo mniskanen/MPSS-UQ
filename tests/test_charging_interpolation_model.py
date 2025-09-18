@@ -21,14 +21,16 @@ def test_interpolation_accuracy():
                                       max_considered_charge=25
                                       )
     
-    fname = resources.files('MPSS_UQ.data') / 'interpolator_flux_60dm_307'
-    flux_interpolator = LYFFluxInterpolator(fname)
-    charger_interpolator = LYFChargingModel(d_m / 2,
-                                            charges_output,
-                                            flux_interpolator=flux_interpolator
-                                            )
+    # fname = resources.files('MPSS_UQ.data') / 'interpolator_flux_60dm_307'
+    # flux_interpolator = LYFFluxInterpolator(fname)
+    # charger_interpolator = LYFChargingModel(d_m / 2,
+    #                                         charges_output,
+    #                                         flux_interpolator=flux_interpolator
+    #                                         )
+    fname = resources.files('MPSS_UQ.data') / 'charging_prob_interpolator_data.npz'
+    charger_interpolator = LYFInterpolator(fname)
     
-    n_tests = 3  # 10
+    n_tests = 1  # 10
     time_direct = 0
     time_interp = 0
     for _ in tqdm(range(n_tests)):
@@ -37,7 +39,7 @@ def test_interpolation_accuracy():
         while True:
             pos_ion_mobility = np.random.uniform(low=1.05e-4, high=1.70e-4)  # 1.20e-4
             neg_ion_mobility = np.random.uniform(low=1.05e-4, high=2.10e-4)  # 1.35e-4
-            ion_ratio = np.random.normal(loc=1.0, scale=0.2/2)
+            # ion_ratio = np.random.normal(loc=1.0, scale=0.2/2)
             
             if pos_ion_mobility < neg_ion_mobility:
                 break
@@ -46,15 +48,18 @@ def test_interpolation_accuracy():
         t1 = perf_counter()
         cp_direct = charger_direct.charging_probability(pos_ion_mobility,
                                                         neg_ion_mobility,
-                                                        ion_ratio,
+                                                        # ion_ratio,
                                                         )
         t2 = perf_counter()
         
         # Run the flux interpolation model
-        cp_interp = charger_interpolator.charging_probability(pos_ion_mobility,
-                                                              neg_ion_mobility,
-                                                              ion_ratio,
-                                                              )
+        cp_interp = charger_interpolator(d_m,
+                                         pos_ion_mobility,
+                                         neg_ion_mobility,
+                                         charges_output
+                                         )
+                                                              # ion_ratio,
+                                                              # )
         
         t3 = perf_counter()
         
@@ -62,11 +67,6 @@ def test_interpolation_accuracy():
         time_interp += t3 - t2
         
         # Calculate the errors
-        # TODO: Actually, I think relative errors don't make sense here because
-        # the scale can go down to 1e-16 where the interpolator probably works (in absolute
-        # terms) worse than near 1e0, so the relative error would be comparatively huge although
-        # the absolute error wouldn't matter any more than the same absolute error with values
-        # closer to 1e0.
         rel_error = 0
         mean_abs_error = 0
         for i in range(charges_output.shape[0]):
