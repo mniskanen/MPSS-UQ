@@ -137,6 +137,7 @@ class DifferentialMobilityParticleSizer():
         
         self.transfer_function = self.compute_transfer_function()
         self.penetration_efficiency = self.compute_penetration_efficiency()
+        self.sampling_line_loss = self.calclineloss()
         
         # Only update the system matrix if the charging probability has been computed
         if self.charger_conditions_set:
@@ -208,7 +209,8 @@ class DifferentialMobilityParticleSizer():
                 )
         
         self.system_matrix *= self.CPC.counting_efficiency[:, np.newaxis]
-        self.system_matrix *= self.penetration_efficiency
+        self.system_matrix *= self.penetration_efficiency[:, np.newaxis]
+        self.system_matrix *= self.sampling_line_loss[:, np.newaxis]
         
         # Change output from concentration to counts
         if self.CPC.output_type == 'counts':
@@ -253,7 +255,37 @@ class DifferentialMobilityParticleSizer():
         # Sherwood number for laminar flow
         Sh = a + b / (tau + c * tau**(1 / 3))
         
-        return np.exp(-tau * Sh)[:, np.newaxis]
+        return np.exp(-tau * Sh)
+    
+    
+    def calclineloss(self):
+        ''' Calculate sampling line losses. '''
+        
+        length = 1  # Length of the sampling line, #TODO as input
+        
+        Kn = mean_free_path_air(self.temperature, self.pressure) / (self.d_m_data * 0.5)
+        dyn_visc = dynamic_viscosity(self.temperature)
+        Cc = cunningham(Kn)
+        
+        # Diffusion coefficient
+        D = BOLTZMANN_CONSTANT * self.temperature / (3 * np.pi * dyn_visc * self.d_m_data) * Cc
+        
+        # Qa on valmiiksi yksikössä m3/s
+        # Convert flow from L/min to m³/s and compute mu
+        mu = D * length / self.Qa
+        
+        # Compute pressure loss factor P
+        P = np.zeros_like(mu)
+        # if mu < 0.009:
+        P[mu < 0.009] = 1 - 5.5 * mu[mu < 0.009]**(2/3) + 3.77 * mu[mu < 0.009]
+        # else:
+        P[mu >= 0.009] = (
+            0.819 * np.exp(-11.5 * mu[mu >= 0.009]) +
+            0.0975 * np.exp(-70.1 * mu[mu >= 0.009]) +
+            0.0325 * np.exp(-179 * mu[mu >= 0.009])
+        )
+        
+        return P
     
     
     def _tf_eps(self, y):
