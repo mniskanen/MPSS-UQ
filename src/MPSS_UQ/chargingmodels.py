@@ -471,7 +471,7 @@ class LYFChargingModel():
         
         chi_p = 80  # Dielectric constant of the particle (water)
         # chi_p = 2.6  # Dielectric constant of the particle (polystyrene)
-        chi_i = 100 # Dielectric constant of the ion
+        chi_i = 5 # Dielectric constant of the ion
         
         gamma_p = (chi_p - AIR_RELATIVE_PERMITTIVITY) / (chi_p + AIR_RELATIVE_PERMITTIVITY)
         gamma_i = (chi_i - AIR_RELATIVE_PERMITTIVITY) / (chi_i + AIR_RELATIVE_PERMITTIVITY)
