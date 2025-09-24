@@ -18,6 +18,7 @@ dependencies = [
 	"pyyaml",
 	"pandas",
 	"psutil",
+	"joblib",
 ]
 
 [build-system]
