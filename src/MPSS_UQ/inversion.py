@@ -14,9 +14,12 @@ p.nice(psutil.HIGH_PRIORITY_CLASS)
 
 
 def compute_posterior(DMPS, prior, measurement, CI=95):
-    ''' Compute and return the expected value and associated credible intervals of the posterior
-    with the assumption of the charging probability specified in the DMPS model. '''
+    ''' Compute and return the expected value and associated credibility intervals of the
+    posterior with the assumption of the charging probability specified in the DMPS model. '''
     
+    if CI < 0 or CI > 100:
+        raise ValueError('Invalid credible interval percentage.')
+        
     MAP_est, post_cov = Laplace_approximation(DMPS, prior, measurement)
     
     # Calculate the requested credible interval estimates
@@ -27,6 +30,57 @@ def compute_posterior(DMPS, prior, measurement, CI=95):
     CI_upper = 10**(MAP_est + k * sigma)
     
     return 10**MAP_est, CI_lower, CI_upper
+
+
+def compute_posterior_marginalize(DMPS,
+                                  prior,
+                                  measurement,
+                                  CI=95,
+                                  marginalize_ion_mobility=True,
+                                  marginalize_ion_ratio=False,
+                                  sample_posterior=False,
+                                  ):
+    ''' Compute and return the conditional mean value and associated credibility intervals of
+    the posterior marginalized over a range of ion mobilities using the LYF model.
+    If sample_posterior = True the posterior estimates (mean value and credible intervals)
+    are calculated from posterior samples (slower). Otherwise, they are approximated from
+    an analytical expression for the mean and covariance of the Gaussian mixture density (faster).
+    '''
+    
+    if CI < 0 or CI > 100:
+        raise ValueError('Invalid credible interval percentage.')
+    
+    if sample_posterior:
+        posterior_samples = Laplace_approximation_marginalize(DMPS,
+                                                              prior,
+                                                              measurement,
+                                                              marginalize_ion_mobility,
+                                                              marginalize_ion_ratio,
+                                                              )
+        
+        posterior_mean = np.mean(posterior_samples, axis=0)
+        
+        # Highest density intervals
+        CI_lower = np.zeros(DMPS.d_m.shape[0])
+        CI_upper = np.zeros_like(CI_lower)
+        for i in range(DMPS.d_m.shape[0]):
+            CI_lower[i], CI_upper[i] = highest_density_interval(posterior_samples[:, i], CI / 100)
+    
+    else:
+        posterior_mean, posterior_covariance = Laplace_approximation_marginalize(DMPS,
+                                                              prior,
+                                                              measurement,
+                                                              marginalize_ion_mobility,
+                                                              marginalize_ion_ratio,
+                                                              )
+        
+        sigma = np.sqrt(np.diag(posterior_covariance))
+        k = norm.ppf(0.5 + CI / 100 / 2)
+        
+        CI_lower = posterior_mean - k * sigma
+        CI_upper = posterior_mean + k * sigma
+        
+    return posterior_mean, CI_lower, CI_upper
 
 
 def log_post(vals, DMPS, L_noise, prior, y_meas):
