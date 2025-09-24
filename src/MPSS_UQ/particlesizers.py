@@ -42,7 +42,7 @@ def cunningham(Kn):
     return 1 + Kn * (1.257 + 0.4 * np.exp(-1.1 / Kn))
 
 
-class DifferentialMobilityParticleSizer():
+class DifferentialMobilityParticleSizer:
     
     def __init__(self, properties):
         
@@ -484,7 +484,7 @@ class DifferentialMobilityParticleSizer():
         return (self.Qsh + self.Qe) / (4 * np.pi * self.length * Z) * np.log(self.R2 / self.R1)
 
 
-class CondensationParticleCounter():
+class CondensationParticleCounter:
     
     def __init__(self, d_m, properties):
         

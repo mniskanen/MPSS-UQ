@@ -24,7 +24,7 @@ VACUUM_PERMITTIVITY = 8.8541878188e-12
 AIR_RELATIVE_PERMITTIVITY = 1.00058986  # i.e., its dielectric constant
 
 
-class LYFChargingModel():
+class LYFChargingModel:
     ''' Implement the Lopez-Yglesias & Flagan charging model.
     Input:
         particle_radius : radius of the aerosol particles of interest
@@ -517,7 +517,7 @@ class LYFChargingModel():
         return phi
 
 
-class LYFInterpolator():
+class LYFInterpolator:
     ''' Fast evaluation of the LYF model charging probability.
     Based on (pre)computing a representative grid of values and an interpolator object for them.
     Evaluation consists then only of evaluating the interpolator.
@@ -712,7 +712,7 @@ class LYFInterpolator():
                 )
 
 
-class LYFFluxInterpolator():
+class LYFFluxInterpolator:
     ''' Fast evaluation of the LYF model average flux coefficients.
     Based on (pre)computing a representative grid of values and an interpolator object for them.
     Evaluation consists then only of evaluating the interpolator.
@@ -886,7 +886,7 @@ class LYFFluxInterpolator():
 
 
 
-class WiedensohlerChargingModel():
+class WiedensohlerChargingModel:
     
     
     def __init__(self,
@@ -947,7 +947,7 @@ class WiedensohlerChargingModel():
         return cp
 
 
-class ChargingModelWrapper():
+class ChargingModelWrapper:
     ''' A wrapper class for the charging models to make the DMPS class pickleable. '''
     
     def __init__(self, model_name, charger, d_m=None, charges=None):

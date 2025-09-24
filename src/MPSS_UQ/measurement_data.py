@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 
-
 import numpy as np
 
 
-
-class Measurement():
+class Measurement:
     ''' A class to store a _single_ measurement. This is given to the inversion routines.
     kwargs can be used to give optional input values, such as the true N in case of simulated
     data (see allowed_optional_keys).
@@ -49,7 +47,7 @@ class Measurement():
         self.compute_noise_statistics()
 
 
-class MeasurementDataset():
+class MeasurementDataset:
     
     def __init__(self, datetimes, d_m_data, MPSS_outputs, output_type, temperatures, pressures):
         
