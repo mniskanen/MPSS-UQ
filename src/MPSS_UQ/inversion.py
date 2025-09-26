@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from scipy.linalg import toeplitz
+from scipy.linalg import toeplitz, expm
 from scipy.stats import norm
 from tqdm import tqdm
 
@@ -352,6 +352,10 @@ def Laplace_approximation_marginalize(DMPS,
         return posterior_mixture_samples
     
     else:
+        
+        # Calculate the mean and covariance of the mixture analytically in the linear space.
+        # We have to first transform each mixture component from log10 to linear space, and only
+        # then can we compute the mean and covariance.
         posterior_means = np.zeros_like(MAP_estimates)
         for i in range(n_invert):
             posterior_means[i] = 10**MAP_estimates[i] * np.exp(
@@ -359,15 +363,16 @@ def Laplace_approximation_marginalize(DMPS,
                 )
         posterior_mean = mixture_probabilities @ posterior_means
         posterior_covariances = np.zeros_like(posterior_covs)
+        I = np.eye(len(posterior_mean))
         for i in range(n_invert):
             posterior_covariances[i] = np.outer(posterior_means[i], posterior_means[i]) * (
-                np.exp(posterior_covs[i] * np.log(10)**2) - 1
+                expm(posterior_covs[i] * np.log(10)**2) - I
                 )
         posterior_covariance = np.zeros_like(posterior_covs[0])
         for i in range(n_invert):
-            mean_diff = MAP_estimates[i] - posterior_mean
+            mean_diff = posterior_means[i] - posterior_mean
             posterior_covariance += mixture_probabilities[i] * (
-                posterior_covs[i] + np.outer(mean_diff, mean_diff)
+                posterior_covariances[i] + np.outer(mean_diff, mean_diff)
                 )
         
         return posterior_mean, posterior_covariance
