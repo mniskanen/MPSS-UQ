@@ -9,6 +9,7 @@ from MPSS_UQ.inversion import (compute_posterior,
                                Laplace_approximation_marginalize,
                                smoothness_prior
                                )
+from MPSS_UQ.measurement_data import generate_DMPS_measurement
 from MPSS_UQ.synthetic_data import generate_DMPS_measurement
 from MPSS_UQ.plotfunctions import plot_psd, plot_marginalized_psd
 
