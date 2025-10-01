@@ -147,8 +147,6 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
         posterior_covariance = np.linalg.inv(J.T @ measurement.inv_noise_cov @ J
                                              + prior['inv_covariance'])
     
-    
-    
     args = (DMPS, measurement.noise_L, prior, measurement.output)
     
     i = 0
@@ -255,14 +253,10 @@ def Laplace_approximation_marginalize(DMPS,
     else:
         n_ion_ratios = 1
     
-    
     n_invert = n_mobilities * n_ion_ratios
     if n_invert == 1:
         print('Nothing to marginalize')
         return
-    
-    # total_time_mobility = 0
-    # total_time_laplace = 0
     
     MAP_estimates_log10 = np.zeros((n_invert, n_bins))
     posterior_covs_log10 = np.zeros((n_invert, n_bins, n_bins))
@@ -273,8 +267,6 @@ def Laplace_approximation_marginalize(DMPS,
     # Starting guess for the Laplace approximation
     N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
     
-    # pbar = tqdm(position=0, desc='Marginalizing')
-    # pbar.reset(total = n_invert)
     i = 0
     for p_idx, pos_ion_mobility in enumerate(pos_ion_mobilities):
         for n_idx, neg_ion_mobility in enumerate(neg_ion_mobilities):
@@ -309,7 +301,6 @@ def Laplace_approximation_marginalize(DMPS,
                 N_guess = MAP_estimates_log10[i]
                 
                 i += 1
-                # pbar.update(1)
     
     # Possibly different probability for each mixture
     mixtures = np.arange(n_invert)
@@ -324,8 +315,6 @@ def Laplace_approximation_marginalize(DMPS,
         posterior_mixture_samples = np.zeros((n_posterior_mixture_samples, n_bins))
         zeros = np.zeros(n_bins)
         ones = np.ones(n_bins)
-        # pbar = tqdm(position=0, desc='Sampling from the posterior mixture')
-        # pbar.reset(total = n_posterior_mixture_samples)
         for i in range(n_posterior_mixture_samples):
             # First choose the component
             component = rng.choice(mixtures, p=mixture_probabilities)
@@ -333,8 +322,6 @@ def Laplace_approximation_marginalize(DMPS,
             # Then sample from that Gaussian
             posterior_mixture_samples[i] = 10**(MAP_estimates_log10[component] +
                         posterior_cov_Ls_log10[component] @ rng.normal(loc=zeros, scale=ones))
-            
-            # pbar.update(1)
         
         return posterior_mixture_samples
     

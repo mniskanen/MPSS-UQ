@@ -76,22 +76,6 @@ def plot_system_matrix(DMPS, num=None, title=None):
     # plt.colorbar()
 
 
-def plot_MAP(DMPS, log10_N, log10_postcov, ax):
-    
-    N_inverted = 10**log10_N
-    binwidth = np.log10(DMPS.d_m[1]) - np.log10(DMPS.d_m[0])
-    
-    ax.fill_between(DMPS.d_m * 1e9,
-                        10**(log10_N + 1.96 * np.sqrt(np.diag(log10_postcov))) / binwidth,
-                        10**(log10_N - 1.96 * np.sqrt(np.diag(log10_postcov))) / binwidth,
-                        alpha=0.25, facecolor='C0', label='95 % credible interval')
-    
-    plot_psd(ax, DMPS.d_m, N=N_inverted, label='MAP estimate', color='k', linestyle='--')
-    
-    ax.set_yscale('linear')
-    ax.legend()
-
-
 def plot_datafit(DMPS, output_measured, log10_N, ax):
     
     # Data prediction

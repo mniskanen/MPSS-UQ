@@ -108,8 +108,10 @@ result = compute_posterior(DMPS_inv, prior, measurement)
 # Step 4: Carry out inversion - Option 2: Marginalize over ion properties
 # =============================================================================
 
-# Have to use the LYF-interp model here
 DMPS_properties_marg = DMPS_prop.copy()
+
+# To marginalize, we have to use a model where we can modify the ion properties,
+# for example the LYF-interp model
 DMPS_properties_marg['charging_model'] = 'LYF-interp-fast'
 
 DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg)
