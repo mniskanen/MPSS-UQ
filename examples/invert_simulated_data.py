@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
 from MPSS_UQ.inversion import (compute_posterior,
+                               compute_posterior_marginalize,
                                Laplace_approximation_marginalize,
                                smoothness_prior
                                )
@@ -100,8 +101,11 @@ DMPS_inv.set_operating_conditions(measurement.temperature,
                                   measurement.pressure
                                   )
 
-CI_percent = 95
-N_MAP, CI_lower, CI_upper = compute_posterior(DMPS_inv, prior, measurement, CI=CI_percent)
+result = compute_posterior(DMPS_inv, prior, measurement)
+#%%
+CI_coverage = 95
+N_mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
+
 
 
 # =============================================================================
@@ -119,12 +123,12 @@ DMPS_marg.set_operating_conditions(measurement.temperature,
                                    )
 
 # Marginalize over charger ion mobilities
-posterior_samples = Laplace_approximation_marginalize(DMPS_marg, prior, measurement,
-                                                      marginalize_ion_mobility=True,
-                                                      marginalize_ion_ratio=False,
-                                                      return_samples=True
-                                                      )
-
+result_marg = compute_posterior_marginalize(DMPS_marg,
+                                            prior,
+                                            measurement,
+                                            # method='gaussian-approximation',
+                                            )
+N_mean_marg, CI_lower_marg, CI_upper_marg = result_marg.posterior_summary(coverage=CI_coverage)
 
 
 # =============================================================================

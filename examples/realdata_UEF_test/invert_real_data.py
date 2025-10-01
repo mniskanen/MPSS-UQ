@@ -15,12 +15,13 @@ from tqdm import tqdm
 from MPSS_UQ.measurement_data import MeasurementDataset, measurement_loader
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer, lpm_to_m3s
 from MPSS_UQ.inversion import compute_posterior, compute_posterior_marginalize, smoothness_prior
+from MPSS_UQ.inversion_results import InversionDataset
 
 from read_dmps_files_labtest import load_and_process_data
 
 
 
-USE_PARALLEL = True
+DO_PARALLEL = True
 DO_MARGINALIZATION = False
 
 
@@ -90,11 +91,6 @@ if __name__ == '__main__':
     DMPS_inv.set_charger_properties(1.35e-4, 1.60e-4)#, 1)
     DMPS_inv.set_operating_conditions(290, 101325)
     
-    # Preallocate
-    N_MAP = np.zeros((len(dataset), DMPS_prop['d_m'].shape[0]))
-    CI_lower = np.zeros_like(N_MAP)
-    CI_upper = np.zeros_like(N_MAP)
-    
     # Configure the prior
     expected_value = -2
     correlation_length = 5 / 16
@@ -103,27 +99,27 @@ if __name__ == '__main__':
                              correlation_length, log_standard_deviation
                              )
     
+    # Storage for the inversion results
+    inv_dataset = InversionDataset(datetimes)
     
     
     # =============================================================================
     # Carry out inversion
     # =============================================================================
     
-    CI_percent = 95
-    
-    if USE_PARALLEL:
+    if DO_PARALLEL:
         
         # Wrapper functions to get the iteration number for parallel execution
         if DO_MARGINALIZATION:
             def run_inversion(args):
                 idx, measurement = args
-                result = compute_posterior_marginalize(DMPS_inv, prior, measurement, CI=CI_percent)
+                result = compute_posterior_marginalize(DMPS_inv, prior, measurement)
                 return idx, result
             
         else:
             def run_inversion(args):
                 idx, measurement = args
-                result = compute_posterior(DMPS_inv, prior, measurement, CI=CI_percent)
+                result = compute_posterior(DMPS_inv, prior, measurement)
                 return idx, result
         
         # Set the number of processes
@@ -141,10 +137,8 @@ if __name__ == '__main__':
             )
         
         # Store results
-        for idx, (n_map, ci_lo, ci_hi) in results:
-            N_MAP[idx] = n_map
-            CI_lower[idx] = ci_lo
-            CI_upper[idx] = ci_hi
+        for idx, result in results:
+            inv_dataset.assign_result(idx, result)
     
     else:
         
@@ -154,35 +148,30 @@ if __name__ == '__main__':
             #                                   )
             
             if DO_MARGINALIZATION:
-                N_MAP[idx], CI_lower[idx], CI_upper[idx] = compute_posterior_marginalize(
-                    DMPS_inv,
-                    prior,
-                    measurement,
-                    CI=CI_percent
-                    )
+                result = compute_posterior_marginalize(DMPS_inv, prior, measurement)
             
             else:
-                N_MAP[idx], CI_lower[idx], CI_upper[idx] = compute_posterior(
-                    DMPS_inv,
-                    prior,
-                    measurement,
-                    CI=CI_percent
-                    )
+                result = compute_posterior(DMPS_inv, prior, measurement)
+            
+            inv_dataset.assign_result(idx, result)
     
-
-
-
-
+    
+    
     #%%
     # =============================================================================
     # Plot the results
     # =============================================================================
     
-    fig, axs = plt.subplots(nrows=2, ncols=1, num=12, clear=True)
+    # How many percent of the posterior should the credible intervals cover
+    CI_coverage = 95
     
+    # Summarize the posterior of each measurement
+    means, CI_lower, CI_upper = inv_dataset.posterior_summary(coverage=CI_coverage)
+    
+    fig, axs = plt.subplots(nrows=2, ncols=1, num=12, clear=True)
     binwidth = np.log10(DMPS_inv.d_m[1]) - np.log10(DMPS_inv.d_m[0])
     
-    Z = N_MAP.T / binwidth
+    Z = means.T / binwidth
     
     plt_N_min = 10**0
     plt_N_max = np.max(Z)
@@ -216,7 +205,7 @@ if __name__ == '__main__':
     
     axs[1].set_ylabel('Particle diameter (nm)')
     axs[1].set_xlabel('Time')
-    axs[1].set_title(f'Estimate uncertainty (width of the {CI_percent} % credible intervals)')
+    axs[1].set_title(f'Estimate uncertainty (width of the {CI_coverage} % credible intervals)')
                 
     cbar = fig.colorbar(im, ax=axs[1],
                          label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$')

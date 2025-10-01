@@ -2,9 +2,11 @@
 
 import numpy as np
 
-from scipy.linalg import toeplitz, expm
+from scipy.linalg import toeplitz
 from scipy.stats import norm
 from tqdm import tqdm
+
+from MPSS_UQ.inversion_results import InversionResult
 
 # Prevent the system from throttling down the CPU by giving any process that uses
 # inversion methods a higher priority
@@ -13,32 +15,21 @@ p = psutil.Process(os.getpid())
 p.nice(psutil.HIGH_PRIORITY_CLASS)
 
 
-def compute_posterior(DMPS, prior, measurement, CI=95):
+def compute_posterior(DMPS, prior, measurement):
     ''' Compute and return the expected value and associated credibility intervals of the
     posterior with the assumption of the charging probability specified in the DMPS model. '''
     
-    if CI < 0 or CI > 100:
-        raise ValueError('Invalid credible interval percentage.')
-        
-    MAP_est, post_cov = Laplace_approximation(DMPS, prior, measurement)
+    MAP, post_cov = Laplace_approximation(DMPS, prior, measurement)
     
-    # Calculate the requested credible interval estimates
-    sigma = np.sqrt(np.diag(post_cov))
-    k = norm.ppf(0.5 + CI / 100 / 2)
-    
-    CI_lower = 10**(MAP_est - k * sigma)
-    CI_upper = 10**(MAP_est + k * sigma)
-    
-    return 10**MAP_est, CI_lower, CI_upper
+    return InversionResult(DMPS.d_m, post_mean_log10=MAP, post_cov_log10=post_cov)
 
 
 def compute_posterior_marginalize(DMPS,
                                   prior,
                                   measurement,
-                                  CI=95,
                                   marginalize_ion_mobility=True,
                                   marginalize_ion_ratio=False,
-                                  sample_posterior=False,
+                                  method='sampling',
                                   ):
     ''' Compute and return the conditional mean value and associated credibility intervals of
     the posterior marginalized over a range of ion mobilities using the LYF model.
@@ -47,40 +38,34 @@ def compute_posterior_marginalize(DMPS,
     an analytical expression for the mean and covariance of the Gaussian mixture density (faster).
     '''
     
-    if CI < 0 or CI > 100:
-        raise ValueError('Invalid credible interval percentage.')
-    
-    if sample_posterior:
+    if method == 'sampling':
         posterior_samples = Laplace_approximation_marginalize(DMPS,
                                                               prior,
                                                               measurement,
                                                               marginalize_ion_mobility,
                                                               marginalize_ion_ratio,
+                                                              method,
                                                               )
         
-        posterior_mean = np.mean(posterior_samples, axis=0)
+        return InversionResult(DMPS.d_m, post_samples=posterior_samples)
         
-        # Highest density intervals
-        CI_lower = np.zeros(DMPS.d_m.shape[0])
-        CI_upper = np.zeros_like(CI_lower)
-        for i in range(DMPS.d_m.shape[0]):
-            CI_lower[i], CI_upper[i] = highest_density_interval(posterior_samples[:, i], CI / 100)
+    elif method == 'gaussian-approximation':
+        posterior_mean, posterior_covariance = Laplace_approximation_marginalize(
+            DMPS,
+            prior,
+            measurement,
+            marginalize_ion_mobility,
+            marginalize_ion_ratio,
+            method,
+            )
+        
+        return InversionResult(DMPS.d_m,
+                               post_mean=posterior_mean,
+                               post_cov=posterior_covariance
+                               )
     
     else:
-        posterior_mean, posterior_covariance = Laplace_approximation_marginalize(DMPS,
-                                                              prior,
-                                                              measurement,
-                                                              marginalize_ion_mobility,
-                                                              marginalize_ion_ratio,
-                                                              )
-        
-        sigma = np.sqrt(np.diag(posterior_covariance))
-        k = norm.ppf(0.5 + CI / 100 / 2)
-        
-        CI_lower = posterior_mean - k * sigma
-        CI_upper = posterior_mean + k * sigma
-        
-    return posterior_mean, CI_lower, CI_upper
+        raise ValueError('Unknkown marginalization method')
 
 
 def log_post(vals, DMPS, L_noise, prior, y_meas):
@@ -212,7 +197,7 @@ def Laplace_approximation_marginalize(DMPS,
                                       measurement,
                                       marginalize_ion_mobility,
                                       marginalize_ion_ratio,
-                                      return_samples=False,
+                                      method='sampling'
                                       ):
     
     ''' Calculate the marginalized posterior of the PSD. Can marginalize over the ion mobilities
@@ -224,10 +209,11 @@ def Laplace_approximation_marginalize(DMPS,
         measurement - a dictionary with data on the measurement
         marginalize_ion_mobility - True/False
         marginalize_ion_ratio - True/False
-        return_samples - True/False: if True, the function returns samples from the posterior
-                         mixture. If False, the function returns the mean and covariance of the
-                         posterior calculated with an analytical formula from the means 
-                         and covariances of the individual mixtures.
+        method - 'sampling' or 'gaussian-approximation'
+                 'sampling' returns samples from the posterior mixture.
+                 'gaussian-approximation' returns the mean and covariance of the
+                 posterior calculated with an analytical formula from the means 
+                 and covariances of the individual mixtures.
     
     Output:
         posterior_mixture_samples - a vector consisting of draws from the marginalized posterior
@@ -278,11 +264,11 @@ def Laplace_approximation_marginalize(DMPS,
     # total_time_mobility = 0
     # total_time_laplace = 0
     
-    MAP_estimates = np.zeros((n_invert, n_bins))
-    posterior_covs = np.zeros((n_invert, n_bins, n_bins))
+    MAP_estimates_log10 = np.zeros((n_invert, n_bins))
+    posterior_covs_log10 = np.zeros((n_invert, n_bins, n_bins))
     log_posts = np.zeros((n_gridpoints_pos, n_gridpoints_neg)) * np.nan
-    if return_samples:
-        posterior_cov_Ls = np.zeros((n_invert, n_bins, n_bins)) * np.nan
+    if method == 'sampling':
+        posterior_cov_Ls_log10 = np.zeros((n_invert, n_bins, n_bins)) * np.nan
     
     # Starting guess for the Laplace approximation
     N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
@@ -307,19 +293,20 @@ def Laplace_approximation_marginalize(DMPS,
                     DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
                 
                 # Calculate the Laplace approximation
-                MAP_estimates[i], posterior_covs[i] = Laplace_approximation(DMPS,
-                                                                            prior,
-                                                                            measurement,
-                                                                            N_start=N_guess,
-                                                                            )
+                MAP_estimates_log10[i], posterior_covs_log10[i] = Laplace_approximation(
+                    DMPS,
+                    prior,
+                    measurement,
+                    N_start=N_guess,
+                    )
                 
                 # Calculate the Cholesky factor
-                if return_samples:
-                    posterior_cov_Ls[i] = np.linalg.cholesky(posterior_covs[i])
+                if method == 'sampling':
+                    posterior_cov_Ls_log10[i] = np.linalg.cholesky(posterior_covs_log10[i])
                 
                 # Use the current MAP estimate as a starting guess for the next one
                 # (it _probably_ is quite close to the truth)
-                N_guess = MAP_estimates[i]
+                N_guess = MAP_estimates_log10[i]
                 
                 i += 1
                 # pbar.update(1)
@@ -332,8 +319,8 @@ def Laplace_approximation_marginalize(DMPS,
     mixture_probabilities = np.ones(mixtures.shape[0])
     mixture_probabilities /= np.sum(mixture_probabilities)
     
-    if return_samples:
-        n_posterior_mixture_samples = 50000
+    if method == 'sampling':
+        n_posterior_mixture_samples = 5000
         posterior_mixture_samples = np.zeros((n_posterior_mixture_samples, n_bins))
         zeros = np.zeros(n_bins)
         ones = np.ones(n_bins)
@@ -344,31 +331,32 @@ def Laplace_approximation_marginalize(DMPS,
             component = rng.choice(mixtures, p=mixture_probabilities)
             
             # Then sample from that Gaussian
-            posterior_mixture_samples[i] = 10**(MAP_estimates[component] +
-                        posterior_cov_Ls[component] @ rng.normal(loc=zeros, scale=ones))
+            posterior_mixture_samples[i] = 10**(MAP_estimates_log10[component] +
+                        posterior_cov_Ls_log10[component] @ rng.normal(loc=zeros, scale=ones))
             
             # pbar.update(1)
         
         return posterior_mixture_samples
     
-    else:
+    elif method == 'gaussian-approximation':
         
         # Calculate the mean and covariance of the mixture analytically in the linear space.
         # We have to first transform each mixture component from log10 to linear space, and only
         # then can we compute the mean and covariance.
-        posterior_means = np.zeros_like(MAP_estimates)
+        posterior_means = np.zeros_like(MAP_estimates_log10)
         for i in range(n_invert):
-            posterior_means[i] = 10**MAP_estimates[i] * np.exp(
-                1 / 2 * np.diag(posterior_covs[i]) * np.log(10)**2
+            posterior_means[i] = 10**MAP_estimates_log10[i] * np.exp(
+                1 / 2 * np.diag(posterior_covs_log10[i]) * np.log(10)**2
                 )
         posterior_mean = mixture_probabilities @ posterior_means
-        posterior_covariances = np.zeros_like(posterior_covs)
+        posterior_covariances = np.zeros_like(posterior_covs_log10)
         I = np.eye(len(posterior_mean))
+        # Only consider the diagonal of the covariance here
         for i in range(n_invert):
             posterior_covariances[i] = np.outer(posterior_means[i], posterior_means[i]) * (
-                expm(posterior_covs[i] * np.log(10)**2) - I
+                np.diag(np.exp(np.diag(posterior_covs_log10[i]) * np.log(10)**2)) - I
                 )
-        posterior_covariance = np.zeros_like(posterior_covs[0])
+        posterior_covariance = np.zeros_like(posterior_covs_log10[0])
         for i in range(n_invert):
             mean_diff = posterior_means[i] - posterior_mean
             posterior_covariance += mixture_probabilities[i] * (
@@ -376,6 +364,9 @@ def Laplace_approximation_marginalize(DMPS,
                 )
         
         return posterior_mean, posterior_covariance
+    
+    else:
+        raise ValueError('Uknown mixing method')
 
 
 def linesearch(fn, direction, N_0, previous_best_f_value, *args):
@@ -423,27 +414,3 @@ def linesearch(fn, direction, N_0, previous_best_f_value, *args):
         min_step_reached = False
     
     return N_0 + dN_new, post_new, min_step_reached
-
-
-def highest_density_interval(samples, percentage):
-    """ Calculate the "percentage" highest probability density (HPD) region
-    from a set of samples. """
-    
-    # A corner case
-    if np.isclose(percentage, 1.0):
-        return np.array([np.min(samples), np.max(samples)])
-    
-    samples_sorted = np.sort(np.copy(samples))
-    n_tot = samples.shape[0]
-    
-    # Number of samples needed for the required percentage
-    n_samples = int(np.floor(percentage * n_tot))
-    
-    # Width of all intervals with the right number of samples
-    widths = samples_sorted[n_samples:] - samples_sorted[:-n_samples]
-    min_width_idx = np.argmin(widths)
-    
-    hdi_start = samples_sorted[min_width_idx]
-    hdi_end = samples_sorted[min_width_idx + n_samples]
-    
-    return np.array([hdi_start, hdi_end])
