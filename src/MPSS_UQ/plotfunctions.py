@@ -3,25 +3,40 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from MPSS_UQ.inversion import highest_density_interval
+from MPSS_UQ.inversion_results import highest_density_interval
 
 
-def plot_psd(ax, d_m, *args, n=None, N=None, **kwargs):
-    ''' A function to plot a particle size distribution on a supplied axis.
-    If the input given is "n", we don't need to normalize by bin width, and
-    if the input given is "N", we do. '''
+def plot_psd(ax, d_m, N, *args, **kwargs):
+    ''' A helper function to plot a particle size distribution, as dN/dlogdm,
+    on a supplied axis ax. The input should be "N", the concentration of particles in each bin. '''
     
-    if n is not None:
-        assert N is None, 'Cannot input both n and N.'
-        ax.loglog(d_m * 1e9, n, *args, **kwargs)
-        
-    elif N is not None:
-        binwidth = np.diff(np.log10(d_m))
-        binwidth = np.concatenate((binwidth, binwidth[-1, np.newaxis]))
-        ax.loglog(d_m * 1e9, N / binwidth, *args, **kwargs)
+    binwidth = np.diff(np.log10(d_m))
+    binwidth = np.concatenate((binwidth, binwidth[-1, np.newaxis]))
+    
+    ax.loglog(d_m * 1e9, N / binwidth, *args, **kwargs)
     
     ax.set_xlabel('Particle mobility diameter (nm)')
     ax.set_ylabel(r'dN / d$\log$d$_m$')
+
+
+def plot_posterior_summary(ax, result, CI_coverage=95):
+    ''' Plot a simple posterior summary (mean value and credible intervals).
+    Input:
+        result - instance of an InversionResult
+        CI_coverage - percentage of posterior the credible intervals should cover
+    '''
+    
+    N_mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
+    
+    ax.fill_between(result.d_m * 1e9,
+                    CI_upper / result.binwidth,
+                    CI_lower / result.binwidth,
+                    alpha=0.25,
+                    facecolor='C0',
+                    label=f'{CI_coverage} % credible interval'
+                    )
+    
+    plot_psd(ax, result.d_m, N=N_mean, linestyle='-', color='C0', label='Posterior mean')
 
 
 def plot_system_matrix(DMPS, num=None, title=None):

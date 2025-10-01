@@ -11,8 +11,7 @@ from MPSS_UQ.inversion import (compute_posterior,
                                smoothness_prior
                                )
 from MPSS_UQ.measurement_data import generate_DMPS_measurement
-from MPSS_UQ.synthetic_data import generate_DMPS_measurement
-from MPSS_UQ.plotfunctions import plot_psd, plot_marginalized_psd
+from MPSS_UQ.plotfunctions import plot_psd, plot_marginalized_psd, plot_posterior_summary
 
 
 '''
@@ -22,7 +21,7 @@ In this example we use synthetic data generated with a DMPS model.
 
 # The workflow consists of the following steps:
 
-    
+
 # =============================================================================
 # Step 1: Load a configuration file to set up the DMPS model
 # =============================================================================
@@ -68,8 +67,8 @@ measurement = generate_DMPS_measurement(DMPS_prop.copy(), scenario='Urban')
 # Mobility diameters for the inverted PSD
 DMPS_prop['d_m'] = np.geomspace(6e-9, 1000e-9, num=50)
 
-# Set up the prior. These values are given in log10-space.
-# Currently the only option is to use the smoothness prior.
+
+# Set up the smoothness prior. The values are given in log10-space.
 
 # Mean of the log-normal prior
 expected_value = -2
@@ -102,9 +101,6 @@ DMPS_inv.set_operating_conditions(measurement.temperature,
                                   )
 
 result = compute_posterior(DMPS_inv, prior, measurement)
-#%%
-CI_coverage = 95
-N_mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
 
 
 
@@ -126,26 +122,21 @@ DMPS_marg.set_operating_conditions(measurement.temperature,
 result_marg = compute_posterior_marginalize(DMPS_marg,
                                             prior,
                                             measurement,
-                                            # method='gaussian-approximation',
                                             )
-N_mean_marg, CI_lower_marg, CI_upper_marg = result_marg.posterior_summary(coverage=CI_coverage)
+
 
 
 # =============================================================================
 # Step 5: Plot the results
 # =============================================================================
 
+CI_coverage = 95
+
 fig, axs = plt.subplots(1, 2, num=1, clear=True)
 fig.suptitle('True and estimated PSDs')
 
-binwidth = np.log10(DMPS_inv.d_m[1]) - np.log10(DMPS_inv.d_m[0])
-axs[0].fill_between(DMPS_inv.d_m * 1e9,
-                    CI_upper / binwidth,
-                    CI_lower / binwidth,
-                    alpha=0.25, facecolor='C0', label=f'{CI_percent} % credible interval')
-plot_psd(axs[0], DMPS_inv.d_m, N=N_MAP, linestyle='-', color='C0', label='MAP estimate')
-plot_psd(axs[0], measurement.d_m_truth, n=measurement.n_true, color='k', label='Truth')
-
+plot_posterior_summary(axs[0], result, CI_coverage)
+plot_psd(axs[0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
 axs[0].set_yscale('linear')
 axs[0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
 axs[0].grid('on')
@@ -153,14 +144,12 @@ axs[0].legend()
 axs[0].set_title('a) MAP estimate, Wiedensohler charging model', loc='left')
 
 
-plot_marginalized_psd(DMPS_marg, posterior_samples, axs[1], CI=CI_percent)
-
-axs[1].plot(measurement.d_m_truth * 1e9, measurement.n_true, 'k-', label='Truth')
+plot_posterior_summary(axs[1], result_marg, CI_coverage)
+plot_psd(axs[1], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
 axs[1].set_yscale('linear')
 axs[1].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
 axs[1].grid('on')
 axs[1].legend()
-axs[1].set_title('')
 axs[1].set_title('b) Marginalized posterior, LYF model', loc='left')
 
 # Set the same ylimits for both graphs
