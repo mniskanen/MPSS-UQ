@@ -14,7 +14,7 @@ def lognormal_distribution(d_m, N, median, log_std):
         )
 
 
-def generate_DMPS_measurement(DMPS_prop, scenario='Urban'):
+def generate_DMPS_measurement(DMPS_prop, scenario):
     ''' Simulate measurement data using a DMPS model.
     Input:
         DMPS_prop - the DMPS properties dictionary
@@ -51,49 +51,52 @@ def generate_DMPS_measurement(DMPS_prop, scenario='Urban'):
     # plot_system_matrix(DMPS)
     
     # Generate a synthetic particle size distribution (based on Seinfeld & Pandis Table 8.3)
-    if scenario == 'Urban':
-        n_true = (lognormal_distribution(DMPS.d_m, 7100, 11.7e-9, 0.232)
-                  + lognormal_distribution(DMPS.d_m, 6320, 37.3e-9, 0.250)
-                  + lognormal_distribution(DMPS.d_m, 960, 151e-9, 0.204))
+    # Define parameters for each scenario, these define a sum of three lognormal modes
+    scenario_params = {
+        'Urban': [(7100, 11.7e-9, 0.232),
+                  (6320, 37.3e-9, 0.250),
+                  (960, 151e-9, 0.204)],
+        
+        'Marine': [(133, 8e-9, 0.657),
+                   (66.6, 266e-9, 0.210),
+                   (3.1, 580e-9, 0.396)],
+        
+        'Rural': [(6650, 15e-9, 0.225),
+                  (147, 54e-9, 0.557),
+                  (1990, 84e-9, 0.266)],
+        
+        'Remote continental': [(3200, 20e-9, 0.161),
+                               (2900, 116e-9, 0.217),
+                               (0.3, 1800e-9, 0.380)],
+        
+        'Free troposphere': [(129, 7e-9, 0.645),
+                             (59.7, 250e-9, 0.253),
+                             (63.5, 520e-9, 0.425)],
+        
+        'Polar': [(21.7, 138e-9, 0.245),
+                  (0.186, 750e-9, 0.300),
+                  (3e-4, 8600e-9, 0.291)],
+        
+        'Desert': [(726, 2e-9, 0.247),
+                   (114, 38e-9, 0.770),
+                   (0.178, 21600e-9, 0.438)],
+        }
     
-    elif scenario == 'Marine':
-        n_true = (lognormal_distribution(DMPS.d_m, 133, 8e-9, 0.657)
-                  + lognormal_distribution(DMPS.d_m, 66.6, 266e-9, 0.210)
-                  + lognormal_distribution(DMPS.d_m, 3.1, 580e-9, 0.396))
     
-    elif scenario == 'Rural':
-        n_true = (lognormal_distribution(DMPS.d_m, 6650, 15e-9, 0.225)
-                  + lognormal_distribution(DMPS.d_m, 147, 54e-9, 0.557)
-                  + lognormal_distribution(DMPS.d_m, 1990, 84e-9, 0.266))
-    
-    elif scenario == 'Remote continental':
-        n_true = (lognormal_distribution(DMPS.d_m, 3200, 20e-9, 0.161)
-                  + lognormal_distribution(DMPS.d_m, 2900, 116e-9, 0.217)
-                  + lognormal_distribution(DMPS.d_m, 0.3, 1800e-9, 0.380))
-    
-    elif scenario == 'Free troposphere':
-        n_true = (lognormal_distribution(DMPS.d_m, 129, 7e-9, 0.645)
-                  + lognormal_distribution(DMPS.d_m, 59.7, 250e-9, 0.253)
-                  + lognormal_distribution(DMPS.d_m, 63.5, 520e-9, 0.425))
-    
-    elif scenario == 'Polar':
-        n_true = (lognormal_distribution(DMPS.d_m, 21.7, 138e-9, 0.245)
-                  + lognormal_distribution(DMPS.d_m, 0.186, 750e-9, 0.300)
-                  + lognormal_distribution(DMPS.d_m, 3e-4, 8600e-9, 0.291))
-    
-    elif scenario == 'Desert':
-        n_true = (lognormal_distribution(DMPS.d_m, 726, 2e-9, 0.247)
-                  + lognormal_distribution(DMPS.d_m, 114, 38e-9, 0.770)
-                  + lognormal_distribution(DMPS.d_m, 0.178, 21600e-9, 0.438))
-    
+    # Input the parameters into lognormal_distribution()
+    if scenario in scenario_params:
+        dN_dlogdp_true = sum(lognormal_distribution(DMPS.d_m, N, median, log_std)
+                             for N, median, log_std in scenario_params[scenario]
+                             )
     else:
-        raise ValueError('Undefined PSD scenario.')
+        valid_scenarios = ', '.join(scenario_params.keys())
+        raise ValueError('Undefined PSD scenario. Use one of the following: ' +
+                         f'{valid_scenarios}')
     
-    # The above true values are given in terms of the PSD density function.
-    # To transform to a bin representation let's multiply the bin midpoint by the bin width.
+    # Transform to a bin representation by multiplying by the log bin width.
     # Assume log width of all bins is the same.
     binwidth = np.log10(DMPS.d_m[1]) - np.log10(DMPS.d_m[0])
-    N_true = n_true * binwidth
+    N_true = dN_dlogdp_true * binwidth
     
     # Generate a DMA observation
     DMPS_output_noiseless = DMPS.forward_model(np.log10(N_true))
@@ -110,7 +113,6 @@ def generate_DMPS_measurement(DMPS_prop, scenario='Urban'):
                               temperature,
                               pressure,
                               N_true=N_true,
-                              n_true=n_true,
                               scenario=scenario,
                               d_m_truth=DMPS_prop['d_m'],
                               )
