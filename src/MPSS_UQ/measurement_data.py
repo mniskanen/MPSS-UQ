@@ -100,7 +100,7 @@ def generate_DMPS_measurement(DMPS_prop, scenario):
     DMPS_prop['d_m'] = np.geomspace(1e-9, 2500e-9, num=500)
 
     # Which bipolar charging model to use
-    DMPS_prop['charging_model'] = 'LYF-interp-fast'
+    DMPS_prop['charging_model'] = 'LYF-interp'
 
     # Maximum considered number of multiple charges
     DMPS_prop['max_charge'] = 8

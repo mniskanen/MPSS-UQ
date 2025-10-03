@@ -82,8 +82,8 @@ if __name__ == '__main__':
     # Mobility diameters for the inverted PSD
     DMPS_prop['d_m'] = np.geomspace(5e-9, 2500e-9, num=60)
     
-    # DMPS_prop['charging_model'] = 'LYF-interp'
-    DMPS_prop['charging_model'] = 'LYF-interp-fast'
+    # DMPS_prop['charging_model'] = 'LYF-interp-flux'
+    DMPS_prop['charging_model'] = 'LYF-interp'
     # DMPS_prop['charging_model'] = 'Wiedensohler'
     DMPS_prop['max_charge'] = 4
     

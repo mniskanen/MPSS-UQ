@@ -151,13 +151,13 @@ class DifferentialMobilityParticleSizer:
         the updated system matrix.
         Required inputs depend on the chosen charging model:
             
-        LYF-direct or LYF-interp:
+        LYF-direct or LYF-interp-flux:
             args = (positive_ion_mobility, negative_ion_mobility, ion_ratio)
         
-        LYF-interp-fast:
+        LYF-interp:
             args = (positive_ion_mobility, negative_ion_mobility)
         
-        ion_ratio is the ratio of positive to negative ions, assumed equal to 1 in LYF-interp-fast.
+        ion_ratio is the ratio of positive to negative ions, assumed equal to 1 in LYF-interp.
         '''
         
         if self.charging_model_name == 'Wiedensohler':
@@ -443,14 +443,14 @@ class DifferentialMobilityParticleSizer:
         elif model == 'LYF-direct':
             self.charger = LYFChargingModel(self.d_m / 2, self.charges)
     
-        elif model == 'LYF-interp':
+        elif model == 'LYF-interp-flux':
             fname = resources.files('MPSS_UQ.data') / 'interpolator_flux_60dm_307'
             flux_interpolator = LYFFluxInterpolator(fname)
             self.charger = LYFChargingModel(
                 self.d_m / 2, self.charges, flux_interpolator=flux_interpolator
                 )
-    
-        elif model == 'LYF-interp-fast':
+        
+        elif model == 'LYF-interp':
             fname = resources.files('MPSS_UQ.data') / 'charging_prob_interpolator_data.npz'
             self.charger = LYFInterpolator(fname)
     

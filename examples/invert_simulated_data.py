@@ -112,7 +112,7 @@ DMPS_properties_marg = DMPS_prop.copy()
 
 # To marginalize, we have to use a model where we can modify the ion properties,
 # for example the LYF-interp model
-DMPS_properties_marg['charging_model'] = 'LYF-interp-fast'
+DMPS_properties_marg['charging_model'] = 'LYF-interp'
 
 DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg)
 
