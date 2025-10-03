@@ -34,7 +34,7 @@ with open("DMPS_properties.yaml", "r") as f:
 # Choose the DMPS
 DMPS_prop = DMPS_prop['UEF-A20']
 
-# Mobility diameters the DMPS measures (i.e. the output channels)
+# Choose mobility diameters the DMPS measures (i.e. the output channels)
 DMPS_prop['d_m_data'] = np.geomspace(6e-9, 800e-9, num=30) # d_min, d_max, num_bins
 
 
@@ -64,23 +64,22 @@ measurement = generate_DMPS_measurement(DMPS_prop.copy(), scenario='Urban')
 # Step 3: Set up the inversion model
 # =============================================================================
 
-# Mobility diameters for the inverted PSD
+# Choose the mobility diameters for the inverted PSD
 DMPS_prop['d_m'] = np.geomspace(6e-9, 1000e-9, num=50)
 
 
-# Set up the smoothness prior. The values are given in log10-space.
-
-# Mean of the log-normal prior
+# Set up the Gaussian smoothness prior. The values are given in log10-space.
+# The values needed to fully specify the prior are the expected (i.e. mean) value,
+# the correlation length which controls the smoothness of the result w.r.t. particle size,
+# and the standard deviation which controls how large variations in the concentration
+# are allowed.
 expected_value = -2
-
-# Controls the smoothness of the PSD estimate over the size range
 correlation_length = 12 / 16
-
-# Controls how large variations of #/cm3 are allowed in the PSD
 log_standard_deviation = 1.5
-
-prior = smoothness_prior(DMPS_prop['d_m'], expected_value,
-                         correlation_length, log_standard_deviation
+prior = smoothness_prior(DMPS_prop['d_m'],
+                         expected_value,
+                         correlation_length,
+                         log_standard_deviation
                          )
 
 
@@ -133,6 +132,9 @@ result_marg = compute_posterior_marginalize(DMPS_marg,
 # =============================================================================
 
 CI_coverage = 95
+
+# To return the estimate mean value and lower and upper limits of the credible intervals, do:
+# mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
 
 fig, axs = plt.subplots(1, 2, num=1, clear=True)
 fig.suptitle('True and estimated PSDs')

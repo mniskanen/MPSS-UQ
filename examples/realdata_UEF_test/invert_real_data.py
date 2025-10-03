@@ -211,3 +211,6 @@ if __name__ == '__main__':
                          label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$')
     
     fig.tight_layout()
+    plt.show()
+    
+    

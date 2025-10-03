@@ -1,27 +1,21 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import dill as pickle
 
 from scipy.interpolate import RegularGridInterpolator
 from tqdm import tqdm
-
 from scipy.optimize import minimize_scalar, brentq
 from scipy.integrate import quad
 from scipy.special import hyp2f1
-# from tqdm import tqdm
 from dataclasses import dataclass
 
-
-# import warnings
-# warnings.filterwarnings("error")
-# warnings.filterwarnings("default")
 
 
 BOLTZMANN_CONSTANT = 1.380649e-23
 ELECTRON_CHARGE = 1.60217663e-19
 VACUUM_PERMITTIVITY = 8.8541878188e-12
 AIR_RELATIVE_PERMITTIVITY = 1.00058986  # i.e., its dielectric constant
+
 
 
 class LYFChargingModel:

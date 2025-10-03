@@ -14,7 +14,6 @@ dependencies = [
 	"scipy",
 	"matplotlib",
 	"tqdm",
-	"dill",
 	"pyyaml",
 	"pandas",
 	"psutil",
