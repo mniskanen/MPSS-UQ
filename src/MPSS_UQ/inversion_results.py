@@ -82,6 +82,9 @@ class InversionResult:
         elif input3:
             self.post_samples = post_samples
             self.input_mode = 'samples'
+        
+        # Set up rng
+        self.rng = np.random.default_rng()
     
     
     def _postprocess_resuts_from_covariance_linear(self, CI):
@@ -138,37 +141,31 @@ class InversionResult:
             return self._postprocess_resuts_from_samples(coverage)
     
     
-    def compute_total_particle_count(self, method="montecarlo", n_samples=10000):
+    def Ntot_samples(self, n_samples=100000):
+        """
+        Computes and returns posterior samples of total particle count.
+        Input:
+            n_samples: number of Ntot samples
+        """
         
-        # TODO: jatka tästä, lasketaan kokonaishiukkasmäärät ja niille epävarmuudet
-        """
-        Computes total particle count and uncertainty.
-
-        Parameters:
-            method: "montecarlo" or "linearized"
-            n_samples: number of samples for Monte Carlo
-
-        Returns:
-            dict with total MAP, mean, and CI
-        """
-        if self.samples_log10 is not None:
-            samples_linear = 10 ** self.samples_log10
-            total_samples = np.sum(samples_linear, axis=1)
-        elif self.map_log10 is not None and self.cov_log10 is not None:
-            if method == "montecarlo":
-                samples = np.random.multivariate_normal(self.map_log10, self.cov_log10, size=n_samples)
-                samples_linear = 10 ** samples
-                total_samples = np.sum(samples_linear, axis=1)
-            else:
-                raise NotImplementedError("Only Monte Carlo method is implemented for Gaussian posterior.")
-        else:
-            raise ValueError("No posterior information available.")
-
-        return {
-            "Total MAP": np.sum(10**self.map_log10),
-            "Total Mean": np.mean(total_samples),
-            "Total CI": tuple(np.percentile(total_samples, [2.5, 97.5]))
-        }
+        if self.input_mode == 'gaussian-linear':
+            mean_tot = np.sum(self.post_mean)
+            var_tot = np.sum(self.post_cov)
+            Ntot_samples = self.rng.normal(loc=mean_tot, scale=var_tot, size=n_samples)
+            return Ntot_samples
+        
+        elif self.input_mode == 'gaussian-log10':
+            # We have to sample because of the nonlinear transformation
+            L = np.linalg.cholesky(self.post_cov_log10)
+            post_samples_log10 = self.post_mean_log10[:, None] + L @ self.rng.normal(
+                loc=0.0, scale=1.0, size=(L.shape[0], n_samples)
+                )
+            post_samples = 10**post_samples_log10
+            Ntot_samples = np.sum(post_samples, axis=0)
+            return Ntot_samples
+        
+        elif self.input_mode == 'samples':
+            return np.sum(self.post_samples, axis=1)
 
 
 class InversionDataset:
@@ -187,7 +184,7 @@ class InversionDataset:
         """
         Returns arrays of posterior mean, lower CI, upper CI for all results.
         """
-        # return [r.posterior_summary(*args, **kwargs) for r in self.results if r is not None]
+        
         num_results = len(self.results)
         num_d_m = self.results[0].d_m.shape[0]
         posterior_means = np.zeros((num_results, num_d_m))

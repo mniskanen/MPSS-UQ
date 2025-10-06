@@ -11,7 +11,7 @@ from MPSS_UQ.inversion import (compute_posterior,
                                smoothness_prior
                                )
 from MPSS_UQ.measurement_data import generate_DMPS_measurement
-from MPSS_UQ.plotfunctions import plot_psd, plot_marginalized_psd, plot_posterior_summary
+from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram
 
 
 '''
@@ -136,34 +136,43 @@ CI_coverage = 95
 # To return the estimate mean value and lower and upper limits of the credible intervals, do:
 # mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
 
-fig, axs = plt.subplots(1, 2, num=1, clear=True)
+fig, axs = plt.subplots(2, 2, num=1, clear=True)
 fig.suptitle('True and estimated PSDs')
 
-plot_posterior_summary(axs[0], result, CI_coverage)
-plot_psd(axs[0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
-axs[0].set_yscale('linear')
-axs[0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
-axs[0].grid('on')
-axs[0].legend()
-axs[0].set_title('a) MAP estimate, Wiedensohler charging model', loc='left')
+plot_posterior_summary(axs[0, 0], result, CI_coverage)
+plot_psd(axs[0, 0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
+axs[0, 0].set_yscale('linear')
+axs[0, 0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
+axs[0, 0].grid('on')
+axs[0, 0].legend()
+axs[0, 0].set_title('a) MAP estimate, Wiedensohler charging model', loc='left')
 
 
-plot_posterior_summary(axs[1], result_marg, CI_coverage)
-plot_psd(axs[1], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
-axs[1].set_yscale('linear')
-axs[1].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
-axs[1].grid('on')
-axs[1].legend()
-axs[1].set_title('b) Marginalized posterior, LYF model', loc='left')
+plot_posterior_summary(axs[1, 0], result_marg, CI_coverage)
+plot_psd(axs[1, 0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
+axs[1, 0].set_yscale('linear')
+axs[1, 0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
+axs[1, 0].grid('on')
+axs[1, 0].legend()
+axs[1, 0].set_title('b) Marginalized posterior, LYF model', loc='left')
 
 # Set the same ylimits for both graphs
-_, y0_max = axs[0].get_ylim()
-_, y1_max = axs[1].get_ylim()
+_, y0_max = axs[0, 0].get_ylim()
+_, y1_max = axs[1, 0].get_ylim()
 y_max = np.max((y0_max, y1_max))
 
-axs[0].set_ylim([0, y_max])
-axs[1].set_ylim([0, y_max])
+axs[0, 0].set_ylim([0, y_max])
+axs[1, 0].set_ylim([0, y_max])
+
+
+Ntot_samples = result.Ntot_samples()
+Ntot_samples_marg = result_marg.Ntot_samples()
+xlimits = (min(np.min(Ntot_samples), np.min(Ntot_samples_marg)),
+           max(np.max(Ntot_samples), np.max(Ntot_samples_marg)),
+           )
+plot_Ntot_histogram(axs[0, 1], Ntot_samples, xlimits=xlimits)
+plot_Ntot_histogram(axs[1, 1], Ntot_samples_marg, xlimits=xlimits)
+
 
 fig.tight_layout()
-
 plt.show()

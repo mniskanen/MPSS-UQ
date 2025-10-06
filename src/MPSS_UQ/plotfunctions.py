@@ -139,29 +139,44 @@ def plot_marginalized_psd(DMPS, posterior_samples, ax, CI=95, num_samples=0):
     ax.set_ylabel(r'dN / d$\log$d$_m$')
 
 
-def plot_Ntot_histogram(Ntots, ax):
+def plot_Ntot_histogram(ax, Ntots, xlimits=None):
     ''' Plot a histogram and some credible intervals of the sampled Ntot. '''
     
     [Ntot_low95, Ntot_high95] = highest_density_interval(Ntots, 0.95)
-    [Ntot_low50, Ntot_high50] = highest_density_interval(Ntots, 0.50)
-    [plt_lo, plt_hi] = highest_density_interval(Ntots, 0.9999)
-    counts, bins = np.histogram(Ntots, bins=50, range=(plt_lo, plt_hi))
+    # [Ntot_low50, Ntot_high50] = highest_density_interval(Ntots, 0.50)
+    
+    if xlimits is None:
+        [plt_lo, plt_hi] = highest_density_interval(Ntots, 0.9999)
+    else:
+        plt_lo, plt_hi = xlimits
+    
+    counts, bins = np.histogram(Ntots, bins=100, range=(plt_lo, plt_hi), density=True)
     width = bins[1] - bins[0]
     ax.bar(bins[1:] - width, counts, width=width, edgecolor="white", color='C0', alpha=0.8)
     ymin, ymax = ax.get_ylim()
     
     ax.vlines(x=[Ntot_low95, Ntot_high95],
                ymin=ymin, ymax=ymax * 1.15, colors='k', linestyle='--')
-    ax.vlines(x=[Ntot_low50, Ntot_high50],
-               ymin=ymin, ymax=ymax * 1.00, colors='k', linestyle='--')
+    # ax.vlines(x=[Ntot_low50, Ntot_high50],
+    #            ymin=ymin, ymax=ymax * 1.00, colors='k', linestyle='--')
     
     ax.set_ylim((ymin, 1.3 * ymax))
     
     # Plot the CI ranges
-    ax.plot(np.array([1.02 * Ntot_low95, 0.99 * Ntot_high95]), 1.2 * np.array([ymax, ymax]),
-            'k--', linewidth=1.5)
-    ax.plot(np.array([1.02 * Ntot_low50, 0.99 * Ntot_high50]), 1.05 * np.array([ymax, ymax]),
-            'k--', linewidth=1.5)
+    # N50_diff = Ntot_high50 - Ntot_low50
+    N95_diff = Ntot_high95 - Ntot_low95
+    ax.plot(
+        np.array([Ntot_low95 + 0.1 * N95_diff, Ntot_high95 - 0.1 * N95_diff]),
+        1.2 * np.array([ymax, ymax]),
+        'k--',
+        linewidth=1.5
+        )
+    # ax.plot(
+    #     np.array([Ntot_low50 + 0.1 * N50_diff, Ntot_high50 - 0.1 * N50_diff]),
+    #     1.05 * np.array([ymax, ymax]),
+    #     'k--',
+    #     linewidth=1.5
+    #     )
     anno_args = {
         'ha': 'center',
         'va': 'center',
@@ -169,16 +184,16 @@ def plot_Ntot_histogram(Ntots, ax):
     }
     ax.annotate('95 % CI',
                  xy=(0.5 * (Ntot_low95 + Ntot_high95), ymax * 1.23), **anno_args)
-    ax.annotate('50 % CI',
-                 xy=(0.5 * (Ntot_low50 + Ntot_high50), ymax * 1.08), **anno_args)
+    # ax.annotate('50 % CI',
+    #              xy=(0.5 * (Ntot_low50 + Ntot_high50), ymax * 1.08), **anno_args)
     anno_args['size'] = 16
     ax.annotate('[', xy=(Ntot_low95, 1.2 * ymax), **anno_args)
     ax.annotate(']', xy=(Ntot_high95, 1.2 * ymax), **anno_args)
-    ax.annotate('[', xy=(Ntot_low50, 1.05 * ymax), **anno_args)
-    ax.annotate(']', xy=(Ntot_high50, 1.05 * ymax), **anno_args)
+    # ax.annotate('[', xy=(Ntot_low50, 1.05 * ymax), **anno_args)
+    # ax.annotate(']', xy=(Ntot_high50, 1.05 * ymax), **anno_args)
     
     ax.set_title(r'Sampled $N_{tot}$ values and credible intervals')# + '\n' +
               # f'50 % CI: [{Ntot_low50 : .3g}, {Ntot_high50 : .3g}]' + '\n' +
               # f'95 % CI: [{Ntot_low95 : .3g}, {Ntot_high95 : .3g}]')
     ax.set_xlabel(r'$N_{tot}$')
-    ax.set_ylabel('Number of samples')
+    ax.set_ylabel(r'$N_{tot}$ density')
