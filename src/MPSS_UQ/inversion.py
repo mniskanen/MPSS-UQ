@@ -311,17 +311,36 @@ def Laplace_approximation_marginalize(DMPS,
     mixture_probabilities /= np.sum(mixture_probabilities)
     
     if method == 'sampling':
-        n_posterior_mixture_samples = 5000
+        n_posterior_mixture_samples = 100000
+        
+        # First calculate, proportional to mixture_probabilities, how many times
+        # each mixture componen should be sampled (counts)
+        counts = mixture_probabilities * n_posterior_mixture_samples
+        counts = np.floor(counts).astype(int)
+        
+        # The above rounds the number of counts down because they have to be integers.
+        # Let's add in at random (but proportional to mixture_probabilities)
+        # the missing numbers of counts using rng.choice()
+        n_missing = n_posterior_mixture_samples - np.sum(counts)
+        extra_components = rng.choice(len(mixture_probabilities),
+                                      size=n_missing,
+                                      p=mixture_probabilities
+                                      )
+        extra_counts = np.bincount(extra_components, minlength=len(mixture_probabilities))
+        counts += extra_counts
+        
+        # Then sample each component in batches
         posterior_mixture_samples = np.zeros((n_posterior_mixture_samples, n_bins))
-        zeros = np.zeros(n_bins)
-        ones = np.ones(n_bins)
-        for i in range(n_posterior_mixture_samples):
-            # First choose the component
-            component = rng.choice(mixtures, p=mixture_probabilities)
-            
-            # Then sample from that Gaussian
-            posterior_mixture_samples[i] = 10**(MAP_estimates_log10[component] +
-                        posterior_cov_Ls_log10[component] @ rng.normal(loc=zeros, scale=ones))
+        start = 0
+        for comp_idx, count in enumerate(counts):
+            if count == 0:
+                continue
+            posterior_mixture_samples[start:start+count] = np.power(10,
+                MAP_estimates_log10[comp_idx][:, None]
+                + posterior_cov_Ls_log10[comp_idx] @ rng.normal(loc=0.0, scale=1.0, size=(n_bins, count))
+                ).T
+            start += count
+
         
         return posterior_mixture_samples
     
