@@ -123,6 +123,7 @@ DMPS_marg.set_operating_conditions(measurement.temperature,
 result_marg = compute_posterior_marginalize(DMPS_marg,
                                             prior,
                                             measurement,
+                                            num_samples=100000,  # more samples for cleaner plots
                                             )
 
 

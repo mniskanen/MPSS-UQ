@@ -30,12 +30,13 @@ def compute_posterior_marginalize(DMPS,
                                   marginalize_ion_mobility=True,
                                   marginalize_ion_ratio=False,
                                   method='sampling',
+                                  num_samples=5000,
                                   ):
     ''' Compute and return the conditional mean value and associated credibility intervals of
     the posterior marginalized over a range of ion mobilities using the LYF model.
-    If sample_posterior = True the posterior estimates (mean value and credible intervals)
-    are calculated from posterior samples (slower). Otherwise, they are approximated from
-    an analytical expression for the mean and covariance of the Gaussian mixture density (faster).
+    Method ('sampling' or 'gaussian-approximation') refers to the way the posterior is represented.
+    Sampling is more accurate (given enough samples) but can be a bit slower and takes much more
+    memory than Gaussian approximation.
     '''
     
     if method == 'sampling':
@@ -45,6 +46,7 @@ def compute_posterior_marginalize(DMPS,
                                                               marginalize_ion_mobility,
                                                               marginalize_ion_ratio,
                                                               method,
+                                                              num_samples=num_samples,
                                                               )
         
         return InversionResult(DMPS.d_m, post_samples=posterior_samples)
@@ -195,7 +197,8 @@ def Laplace_approximation_marginalize(DMPS,
                                       measurement,
                                       marginalize_ion_mobility,
                                       marginalize_ion_ratio,
-                                      method='sampling'
+                                      method='sampling',
+                                      num_samples=5000,
                                       ):
     
     ''' Calculate the marginalized posterior of the PSD. Can marginalize over the ion mobilities
@@ -212,6 +215,7 @@ def Laplace_approximation_marginalize(DMPS,
                  'gaussian-approximation' returns the mean and covariance of the
                  posterior calculated with an analytical formula from the means 
                  and covariances of the individual mixtures.
+        num_samples - (if using sampling) number of samples drawn from the posterior mixture.
     
     Output:
         posterior_mixture_samples - a vector consisting of draws from the marginalized posterior
@@ -311,17 +315,15 @@ def Laplace_approximation_marginalize(DMPS,
     mixture_probabilities /= np.sum(mixture_probabilities)
     
     if method == 'sampling':
-        n_posterior_mixture_samples = 100000
-        
         # First calculate, proportional to mixture_probabilities, how many times
-        # each mixture componen should be sampled (counts)
-        counts = mixture_probabilities * n_posterior_mixture_samples
+        # each mixture component should be sampled (counts)
+        counts = mixture_probabilities * num_samples
         counts = np.floor(counts).astype(int)
         
         # The above rounds the number of counts down because they have to be integers.
         # Let's add in at random (but proportional to mixture_probabilities)
         # the missing numbers of counts using rng.choice()
-        n_missing = n_posterior_mixture_samples - np.sum(counts)
+        n_missing = num_samples - np.sum(counts)
         extra_components = rng.choice(len(mixture_probabilities),
                                       size=n_missing,
                                       p=mixture_probabilities
@@ -330,17 +332,21 @@ def Laplace_approximation_marginalize(DMPS,
         counts += extra_counts
         
         # Then sample each component in batches
-        posterior_mixture_samples = np.zeros((n_posterior_mixture_samples, n_bins))
+        posterior_mixture_samples = np.zeros((num_samples, n_bins),
+                                             dtype=np.float32
+                                             )
         start = 0
         for comp_idx, count in enumerate(counts):
             if count == 0:
                 continue
             posterior_mixture_samples[start:start+count] = np.power(10,
                 MAP_estimates_log10[comp_idx][:, None]
-                + posterior_cov_Ls_log10[comp_idx] @ rng.normal(loc=0.0, scale=1.0, size=(n_bins, count))
+                + posterior_cov_Ls_log10[comp_idx] @ rng.normal(loc=0.0,
+                                                                scale=1.0,
+                                                                size=(n_bins, count)
+                                                                )
                 ).T
             start += count
-
         
         return posterior_mixture_samples
     
