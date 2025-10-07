@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
+import matplotlib.gridspec as gridspec
+from matplotlib.lines import Line2D
 import psutil
 from joblib import Parallel, delayed
 import zipfile
@@ -16,6 +18,7 @@ from MPSS_UQ.measurement_data import MeasurementDataset, measurement_loader
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer, lpm_to_m3s
 from MPSS_UQ.inversion import compute_posterior, compute_posterior_marginalize, smoothness_prior
 from MPSS_UQ.inversion_results import InversionDataset
+from MPSS_UQ.plotfunctions import plot_posterior_summary, plot_Ntot_histogram
 
 from read_dmps_files_labtest import load_and_process_data
 
@@ -87,14 +90,14 @@ if __name__ == '__main__':
     # DMPS_prop['charging_model'] = 'Wiedensohler'
     DMPS_prop['max_charge'] = 4
     
-    DMPS_inv = DifferentialMobilityParticleSizer(DMPS_prop)
-    DMPS_inv.set_charger_properties(1.35e-4, 1.60e-4)#, 1)
-    DMPS_inv.set_operating_conditions(290, 101325)
+    DMPS = DifferentialMobilityParticleSizer(DMPS_prop)
+    DMPS.set_charger_properties(1.35e-4, 1.60e-4)#, 1)
+    DMPS.set_operating_conditions(290, 101325)
     
     # Configure the prior
     expected_value = -2
     correlation_length = 5 / 16
-    log_standard_deviation = 2.0
+    log_standard_deviation = 1.5
     prior = smoothness_prior(DMPS_prop['d_m'], expected_value,
                              correlation_length, log_standard_deviation
                              )
@@ -113,13 +116,13 @@ if __name__ == '__main__':
         if DO_MARGINALIZATION:
             def run_inversion(args):
                 idx, measurement = args
-                result = compute_posterior_marginalize(DMPS_inv, prior, measurement)
+                result = compute_posterior_marginalize(DMPS, prior, measurement)
                 return idx, result
             
         else:
             def run_inversion(args):
                 idx, measurement = args
-                result = compute_posterior(DMPS_inv, prior, measurement)
+                result = compute_posterior(DMPS, prior, measurement)
                 return idx, result
         
         # Set the number of processes
@@ -143,15 +146,15 @@ if __name__ == '__main__':
     else:
         
         for idx, measurement in enumerate(tqdm(measurement_loader(dataset), total=len(dataset))):
-            # DMPS_inv.set_operating_conditions(measurement.temperature,
+            # DMPS.set_operating_conditions(measurement.temperature,
             #                                   measurement.pressure * 1e2
             #                                   )
             
             if DO_MARGINALIZATION:
-                result = compute_posterior_marginalize(DMPS_inv, prior, measurement)
+                result = compute_posterior_marginalize(DMPS, prior, measurement)
             
             else:
-                result = compute_posterior(DMPS_inv, prior, measurement)
+                result = compute_posterior(DMPS, prior, measurement)
             
             inv_dataset.assign_result(idx, result)
     
@@ -168,20 +171,20 @@ if __name__ == '__main__':
     # Summarize the posterior of each measurement
     means, CI_lower, CI_upper = inv_dataset.posterior_summary(coverage=CI_coverage)
     
-    fig, axs = plt.subplots(nrows=2, ncols=1, num=12, clear=True)
-    binwidth = np.log10(DMPS_inv.d_m[1]) - np.log10(DMPS_inv.d_m[0])
+    fig, axs = plt.subplots(nrows=2, ncols=1, num=10, clear=True)
+    binwidth = np.log10(DMPS.d_m[1]) - np.log10(DMPS.d_m[0])
     
     Z = means.T / binwidth
     
-    plt_N_min = 10**0
+    plt_N_min = 10**0#np.min(Z)
     plt_N_max = np.max(Z)
-    im = axs[0].pcolormesh(*np.meshgrid(datetimes, DMPS_inv.d_m * 1e9), Z,
+    im = axs[0].pcolormesh(*np.meshgrid(datetimes, DMPS.d_m * 1e9), Z,
                        norm=colors.LogNorm(vmin=plt_N_min, vmax=plt_N_max),
                        cmap='viridis')
     
     axs[0].set_yscale('log')
     axs[0].yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
-    axs[0].set_yticks([DMPS_inv.d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, DMPS_inv.d_m[-1] * 1e9])
+    axs[0].set_yticks([DMPS.d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, DMPS.d_m[-1] * 1e9])
     
     axs[0].set_ylabel('Particle diameter (nm)')
     axs[0].set_xlabel('Time')
@@ -195,13 +198,13 @@ if __name__ == '__main__':
     plotval = CI_width.T / binwidth# / Z
     plt_CIw_min = np.min(plotval)  #10**-1.5
     plt_CIw_max = np.max(plotval)
-    im = axs[1].pcolormesh(*np.meshgrid(datetimes, DMPS_inv.d_m * 1e9), plotval,
+    im = axs[1].pcolormesh(*np.meshgrid(datetimes, DMPS.d_m * 1e9), plotval,
                        norm=colors.LogNorm(vmin=plt_CIw_min, vmax=plt_CIw_max),
                        cmap='cividis')
     
     axs[1].set_yscale('log')
     axs[1].yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
-    axs[1].set_yticks([DMPS_inv.d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, DMPS_inv.d_m[-1] * 1e9])
+    axs[1].set_yticks([DMPS.d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, DMPS.d_m[-1] * 1e9])
     
     axs[1].set_ylabel('Particle diameter (nm)')
     axs[1].set_xlabel('Time')
@@ -214,3 +217,59 @@ if __name__ == '__main__':
     plt.show()
     
     
+    # Example single measurements
+    
+    fig = plt.figure(num=12, clear=True)
+    gs = gridspec.GridSpec(3, 2, height_ratios=[1, 0.05, 1])  # middle row is a gap for a 
+    axs = np.empty((2, 2), dtype=object)
+    axs = [
+        fig.add_subplot(gs[0, 0]),
+        fig.add_subplot(gs[0, 1]),
+        fig.add_subplot(gs[2, 0]),
+        fig.add_subplot(gs[2, 1]),
+        ]
+    
+    idx_1 = 10
+    idx_2 = 100
+    # Convert numpy datetimes to Python datetimes for easier formatting
+    datetime_1 = inv_dataset.datetimes[idx_1].astype('datetime64[s]').item()
+    datetime_2 = inv_dataset.datetimes[idx_2].astype('datetime64[s]').item()
+    
+    plot_posterior_summary(axs[0], inv_dataset.results[idx_1], CI_coverage)
+    axs[0].set_yscale('linear')
+    axs[0].set_xlim([DMPS.d_m[0] * 1e9, DMPS.d_m[-1] * 1e9])
+    axs[0].grid('on')
+    axs[0].legend()
+    axs[0].set_title(
+        f'Size distribution on {datetime_1.date()} at {datetime_1.time()}',
+        loc='center'
+        )
+    axs[0].set_ylim(0, 4000)
+    
+    
+    plot_posterior_summary(axs[2], inv_dataset.results[idx_2], CI_coverage)
+    axs[2].set_yscale('linear')
+    axs[2].set_xlim([DMPS.d_m[0] * 1e9, DMPS.d_m[-1] * 1e9])
+    axs[2].grid('on')
+    axs[2].legend()
+    axs[2].set_title(
+        f'Size distribution on {datetime_2.date()} at {datetime_2.time()}',
+        loc='center'
+        )
+    axs[2].set_ylim(0, 2000)
+    
+    Ntot_samples_1 = inv_dataset.results[idx_1].Ntot_samples()
+    Ntot_samples_2 = inv_dataset.results[idx_2].Ntot_samples()
+    plot_Ntot_histogram(axs[1], Ntot_samples_1)
+    plot_Ntot_histogram(axs[3], Ntot_samples_2)
+    
+    
+    line = Line2D([0.075, 0.95], [0.50, 0.50], transform=fig.transFigure,
+                  color='black', linewidth=4)
+    fig.add_artist(line)
+
+    
+    
+    fig.tight_layout()
+    plt.show()
+

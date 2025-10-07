@@ -3,6 +3,8 @@
 import yaml
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from matplotlib.lines import Line2D
 
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
 from MPSS_UQ.inversion import (compute_posterior,
@@ -137,43 +139,58 @@ CI_coverage = 95
 # To return the estimate mean value and lower and upper limits of the credible intervals, do:
 # mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
 
-fig, axs = plt.subplots(2, 2, num=1, clear=True)
+# fig, axs = plt.subplots(2, 2, num=1, clear=True)
+fig = plt.figure(num=1, clear=True)
+gs = gridspec.GridSpec(3, 2, height_ratios=[1, 0.05, 1])  # middle row is a gap for a 
+axs = np.empty((2, 2), dtype=object)
+axs = [
+    fig.add_subplot(gs[0, 0]),
+    fig.add_subplot(gs[0, 1]),
+    fig.add_subplot(gs[2, 0]),
+    fig.add_subplot(gs[2, 1]),
+    ]
+
 fig.suptitle('True and estimated PSDs')
 
-plot_posterior_summary(axs[0, 0], result, CI_coverage)
-plot_psd(axs[0, 0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
-axs[0, 0].set_yscale('linear')
-axs[0, 0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
-axs[0, 0].grid('on')
-axs[0, 0].legend()
-axs[0, 0].set_title('a) MAP estimate, Wiedensohler charging model', loc='left')
+plot_posterior_summary(axs[0], result, CI_coverage)
+plot_psd(axs[0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
+axs[0].set_yscale('linear')
+axs[0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
+axs[0].grid('on')
+axs[0].legend()
+axs[0].set_title('a) PSD estimate, charging uncertainty not considered', loc='left')
 
 
-plot_posterior_summary(axs[1, 0], result_marg, CI_coverage)
-plot_psd(axs[1, 0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
-axs[1, 0].set_yscale('linear')
-axs[1, 0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
-axs[1, 0].grid('on')
-axs[1, 0].legend()
-axs[1, 0].set_title('b) Marginalized posterior, LYF model', loc='left')
+plot_posterior_summary(axs[2], result_marg, CI_coverage)
+plot_psd(axs[2], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
+axs[2].set_yscale('linear')
+axs[2].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
+axs[2].grid('on')
+axs[2].legend()
+axs[2].set_title('b) PSD estimate, marginalized charging uncertainty', loc='left')
 
 # Set the same ylimits for both graphs
-_, y0_max = axs[0, 0].get_ylim()
-_, y1_max = axs[1, 0].get_ylim()
+_, y0_max = axs[0].get_ylim()
+_, y1_max = axs[2].get_ylim()
 y_max = np.max((y0_max, y1_max))
 
-axs[0, 0].set_ylim([0, y_max])
-axs[1, 0].set_ylim([0, y_max])
+axs[0].set_ylim([0, y_max])
+axs[2].set_ylim([0, y_max])
 
 
+Ntot_true = np.sum(measurement.N_true)
 Ntot_samples = result.Ntot_samples()
 Ntot_samples_marg = result_marg.Ntot_samples()
 xlimits = (min(np.min(Ntot_samples), np.min(Ntot_samples_marg)),
            max(np.max(Ntot_samples), np.max(Ntot_samples_marg)),
            )
-plot_Ntot_histogram(axs[0, 1], Ntot_samples, xlimits=xlimits)
-plot_Ntot_histogram(axs[1, 1], Ntot_samples_marg, xlimits=xlimits)
+plot_Ntot_histogram(axs[1], Ntot_samples, Ntot_true=Ntot_true, xlimits=xlimits)
+plot_Ntot_histogram(axs[3], Ntot_samples_marg, Ntot_true=Ntot_true, xlimits=xlimits)
 
+
+line = Line2D([0.075, 0.95], [0.49, 0.49], transform=fig.transFigure,
+              color='black', linewidth=4)
+fig.add_artist(line)
 
 fig.tight_layout()
 plt.show()

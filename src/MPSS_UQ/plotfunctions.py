@@ -139,14 +139,14 @@ def plot_marginalized_psd(DMPS, posterior_samples, ax, CI=95, num_samples=0):
     ax.set_ylabel(r'dN / d$\log$d$_m$')
 
 
-def plot_Ntot_histogram(ax, Ntots, xlimits=None):
+def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None):
     ''' Plot a histogram and some credible intervals of the sampled Ntot. '''
     
     [Ntot_low95, Ntot_high95] = highest_density_interval(Ntots, 0.95)
     # [Ntot_low50, Ntot_high50] = highest_density_interval(Ntots, 0.50)
     
     if xlimits is None:
-        [plt_lo, plt_hi] = highest_density_interval(Ntots, 0.9999)
+        [plt_lo, plt_hi] = highest_density_interval(Ntots, 0.98)
     else:
         plt_lo, plt_hi = xlimits
     
@@ -197,3 +197,9 @@ def plot_Ntot_histogram(ax, Ntots, xlimits=None):
               # f'95 % CI: [{Ntot_low95 : .3g}, {Ntot_high95 : .3g}]')
     ax.set_xlabel(r'$N_{tot}$')
     ax.set_ylabel(r'$N_{tot}$ density')
+    
+    if Ntot_true is not None:
+        low_y, high_y = ax.get_ylim()
+        ax.plot([Ntot_true, Ntot_true], [0, 0.2 * high_y], 'k-', linewidth=5)
+        ax.annotate(r'True $N_\mathrm{tot}$',
+                     xy=(Ntot_true, 0.22 * high_y), ha='center', size=10)
