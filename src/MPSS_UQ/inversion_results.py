@@ -150,12 +150,29 @@ class InversionResult:
             return self._postprocess_resuts_from_samples(coverage)
     
     
-    def Ntot_samples(self, n_samples=100000):
+    def Ntot_samples(self, n_samples=None):
         """
-        Computes and returns posterior samples of total particle count.
+        Returns samples of total posterior particle count.
         Input:
-            n_samples: number of Ntot samples
+            n_samples: number of Ntot samples to return
         """
+        
+        if self.input_mode == 'samples':
+            if n_samples is None:
+                return np.sum(self.post_samples, axis=1)
+            
+            elif n_samples <= len(self.post_samples):
+                sample_idxs = self.rng.choice(len(self.post_samples), n_samples, replace=False)
+                return np.sum(self.post_samples[sample_idxs], axis=1)
+            
+            else:
+                raise ValueError(
+                    f'Cannot request n={n_samples} Ntot samples because InversionResult has ' + 
+                    f'only n={len(self.post_samples)} posterior samples.'
+                    )
+        
+        if n_samples is None:
+            n_samples = 5000
         
         if self.input_mode == 'gaussian-linear':
             mean_tot = np.sum(self.post_mean)
@@ -169,12 +186,10 @@ class InversionResult:
             post_samples_log10 = self.post_mean_log10[:, None] + L @ self.rng.normal(
                 loc=0.0, scale=1.0, size=(L.shape[0], n_samples)
                 )
-            post_samples = 10**post_samples_log10
+            # Do 10^samples, but using np.exp (faster)
+            post_samples = np.exp(post_samples_log10 * np.log(10))
             Ntot_samples = np.sum(post_samples, axis=0)
             return Ntot_samples
-        
-        elif self.input_mode == 'samples':
-            return np.sum(self.post_samples, axis=1)
 
 
 class InversionDataset:
