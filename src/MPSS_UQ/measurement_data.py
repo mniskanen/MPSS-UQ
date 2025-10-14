@@ -31,12 +31,18 @@ class Measurement:
     
     def compute_noise_statistics(self):
         if self.output_type == 'counts':
-            self.noise_cov = np.diag(np.clip(self.output, 1, np.inf))
-            # self.noise_cov += np.diag(self.output * 0.01)**2
-            self.inv_noise_cov = np.diag(1 / np.diag(self.noise_cov))
+            # self.noise_cov = self.output.astype(np.float64)
+            self.noise_cov = np.clip(self.output, 1, np.inf)
+            self.noise_cov += (2 + self.output * 0.01)**2
+            self.inv_noise_cov = 1 / self.noise_cov
             
             # Matrix square root of the inverse noise covariance
-            self.noise_L = np.diag(np.sqrt(np.diag(self.inv_noise_cov)))
+            self.noise_L = np.sqrt(self.inv_noise_cov)
+            
+            # Make them matrices
+            self.noise_cov = np.diag(self.noise_cov)
+            self.inv_noise_cov = np.diag(self.inv_noise_cov)
+            self.noise_L = np.diag(self.noise_L)
             
         elif self.output_type == 'concentration':
             # TODO
