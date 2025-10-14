@@ -170,15 +170,19 @@ axs[2].legend()
 axs[2].set_title('b) PSD estimate, marginalized charging uncertainty', loc='left')
 
 # Set the same ylimits for both graphs
-_, y0_max = axs[0].get_ylim()
-_, y1_max = axs[2].get_ylim()
+y0_min, y0_max = axs[0].get_ylim()
+y1_min, y1_max = axs[2].get_ylim()
+y_min = np.min((y0_min, y1_min))
 y_max = np.max((y0_max, y1_max))
 
-axs[0].set_ylim([0, y_max])
-axs[2].set_ylim([0, y_max])
+axs[0].set_ylim([y_min, y_max])
+axs[2].set_ylim([y_min, y_max])
 
 
-Ntot_true = np.sum(measurement.N_true)
+# Calculate the true Ntot only for the sizes we consider in the inversion
+true_idx_1 = np.where(measurement.d_m_truth >= DMPS_prop['d_m'][0])[0][0]
+true_idx_2 = np.where(measurement.d_m_truth <= DMPS_prop['d_m'][-1])[0][-1]
+Ntot_true = np.sum(measurement.N_true[true_idx_1 : true_idx_2 + 1])
 Ntot_samples = result.Ntot_samples()
 Ntot_samples_marg = result_marg.Ntot_samples()
 xlimits = (min(np.min(Ntot_samples), np.min(Ntot_samples_marg)),
