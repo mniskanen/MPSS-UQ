@@ -195,12 +195,12 @@ if __name__ == '__main__':
     
     # Plot uncertainties
     CI_width = CI_upper - CI_lower
-    plotval = CI_width.T / binwidth# / Z
+    plotval = CI_width.T / binwidth
     plt_CIw_min = np.min(plotval)  #10**-1.5
     plt_CIw_max = np.max(plotval)
     im = axs[1].pcolormesh(*np.meshgrid(datetimes, DMPS.d_m * 1e9), plotval,
                        norm=colors.LogNorm(vmin=plt_CIw_min, vmax=plt_CIw_max),
-                       cmap='cividis')
+                       cmap='Blues_r')
     
     axs[1].set_yscale('log')
     axs[1].yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
@@ -217,8 +217,28 @@ if __name__ == '__main__':
     plt.show()
     
     
-    # Example single measurements
+    # Variance reduction plot
+    prior_variance = np.diag(prior['covariance'])
+    post_variance = inv_dataset.posterior_variance()
+    VR = np.log10(post_variance / prior_variance)
     
+    fig, ax = plt.subplots(nrows=1, ncols=1, num=100, clear=True)
+    im = ax.pcolormesh(*np.meshgrid(datetimes, DMPS.d_m * 1e9), VR.T,
+                       cmap='Blues_r')
+    cbar = fig.colorbar(im, ax=ax, label=r'$\log_{10}(\sigma_\mathrm{post}^2 / \sigma_\mathrm{prior}^2)$')
+    
+    ax.set_yscale('log')
+    ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
+    ax.set_yticks([DMPS.d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, DMPS.d_m[-1] * 1e9])
+    ax.set_ylabel('Particle diameter (nm)')
+    ax.set_xlabel('Time')
+    ax.set_title('log variance reduction')
+    
+    fig.tight_layout()
+    plt.show()
+    
+    
+    # Example measurements
     fig = plt.figure(num=12, clear=True)
     gs = gridspec.GridSpec(3, 2, height_ratios=[1, 0.05, 1])  # middle row is a gap for a 
     axs = np.empty((2, 2), dtype=object)

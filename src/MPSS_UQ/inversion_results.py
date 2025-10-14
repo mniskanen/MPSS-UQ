@@ -124,6 +124,15 @@ class InversionResult:
         return post_mean, CI_lower, CI_upper
     
     
+    def posterior_variance(self):
+        """ Calculate (if needed) and return the posterior variance.
+        """
+        if self.input_mode == 'gaussian-log10':
+            return np.diag(self.post_cov_log10)
+        elif self.input_mode == 'samples':
+            return np.var(np.log10(self.post_samples))
+    
+    
     def posterior_summary(self, coverage=95):
         """
         Returns the posterior mean and credible intervals.
@@ -179,12 +188,26 @@ class InversionDataset:
 
     def assign_result(self, idx, result: InversionResult):
         self.results[idx] = result
-
+    
+    
+    def posterior_variance(self):
+        """
+        Returns an array of posterior variances for all results.
+        """
+        num_results = len(self.results)
+        num_d_m = self.results[0].d_m.shape[0]
+        posterior_variances = np.zeros((num_results, num_d_m))
+        
+        for i in range(num_results):
+            posterior_variances[i] = self.results[i].posterior_variance()
+        
+        return posterior_variances
+    
+    
     def posterior_summary(self, *args, **kwargs):
         """
         Returns arrays of posterior mean, lower CI, upper CI for all results.
         """
-        
         num_results = len(self.results)
         num_d_m = self.results[0].d_m.shape[0]
         posterior_means = np.zeros((num_results, num_d_m))
