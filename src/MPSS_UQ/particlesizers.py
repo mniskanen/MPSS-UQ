@@ -2,6 +2,7 @@
 
 import numpy as np
 import importlib.resources as resources
+import warnings
 
 from scipy.special import erf
 
@@ -44,14 +45,24 @@ def cunningham(Kn):
 
 class DifferentialMobilityParticleSizer:
     
-    def __init__(self, properties):
+    def __init__(self,
+                 properties,             # A DMPS properties dictionary
+                 inversion_grid='auto',  # Bins for inversion, "auto" or np.ndarray
+                 n_bins=None,            # [Optional] If using inversion_grid=="auto", 
+                                         # can choose the number of inversion bins
+                 ):
         
         # Mobility diameters the device has been set to measure (corresponding to the
         # voltages measured)
         self.d_m_data = properties['d_m_data']
         
         # Diameters at which we want to calculate the solution of the inverse problem
-        self.d_m = properties['d_m']
+        if isinstance(inversion_grid, str):
+            if inversion_grid != 'auto':
+                raise ValueError("inversion_grid must be 'auto' or a 1D numpy array.")
+            self.d_m = _auto_inversion_grid(self.d_m_data, n_bins=n_bins)
+        elif type(inversion_grid) == np.ndarray:
+            self.d_m = inversion_grid
         
         self.Qsh = properties['Qsh']  # Sheath flow (liters per minute)
         self.Qe = properties['Qe']  # Exhaust flow (lpm)
@@ -537,3 +548,81 @@ class CondensationParticleCounter:
             raise ValueError("Input 'c' must be non-negative.")
     
         return True
+
+
+def _auto_inversion_grid(d_m_data,
+                         n_bins=None,
+                         pad_decades=0.15,
+                         min_d_m=1e-9,
+                         max_d_m=2500e-9,
+                         ):
+    """
+    Build a uniform log10-spaced inversion grid d_m from the measured size
+    grid d_m_data by extending the range on both sides by a fixed number of
+    decades. The inversion grid is clipped to [min_d_m, max_d_m].
+    
+    Parameters
+    ----------
+    d_m_data : (N,) array_like of float
+        Measured bin centers (in meters). Assumed to be uniform in log10 spacing.
+    n_bins : int or None, optional
+        Total number of bins for the inversion grid. If `None` (default), the
+        measured log10 step is reused; the grid is extended by at least one bin
+        on each side and clipped to `[min_d_m, max_d_m]`.
+    pad_decades : float, optional (default 0.15)
+        Guard band in **decades** (log10) added below and above the measured range
+        For example, 0.15 extends the range by about ×1.41 on each side
+        (10**0.15 ≈ 1.41). If the range extends the absolute limits, it is clipped.
+    min_d_m and max_d_m : float, optional
+        Absolute minimum and maximum diameter the inversion grid is allowed to take.
+        These are mainly related to the min and max diameters the charge fraction
+        interpolators are configured for.
+
+    Returns
+    -------
+    d_m : (M,) ndarray of float
+        Strictly increasing inversion grid (in meters), uniform in log10 space.
+        If `n_bins` is None, `M` is chosen so the measured log step is preserved
+        over the extended/clipped range (with at least one extra bin per side).
+        Otherwise `M == n_bins`.
+    """
+    
+    # Calculate the inversion grid bounds
+    d_min = max(min_d_m, d_m_data[0] / (10.0 ** pad_decades))
+    d_max = min(max_d_m, d_m_data[-1] * (10.0 ** pad_decades))
+    
+    log_d_min = np.log10(d_min)
+    log_d_max = np.log10(d_max)
+    log_d_min_data = np.log10(d_m_data[0])
+    log_d_max_data = np.log10(d_m_data[-1])
+    
+    # If we use d_m_data in the measured area, count the number of extra bins needed and
+    # the new d_min and d_max in that 'grid'
+    if n_bins is None:
+        binwidth = np.log10(d_m_data[1]) - np.log10(d_m_data[0])
+        
+        # Make sure to extend at least one bin
+        n_smaller_bins = max(1, int(np.floor((log_d_min_data - log_d_min) / binwidth)))
+        n_larger_bins = max(1, int(np.floor((log_d_max - log_d_max_data) / binwidth)))
+        log_d_min = log_d_min_data - n_smaller_bins * binwidth
+        log_d_max = log_d_max_data + n_larger_bins * binwidth
+        
+        # But ensure that we don't go past the hard boundaries
+        changed = False
+        if 10**log_d_min < min_d_m:
+            log_d_min = np.log10(min_d_m); changed = True
+        if 10**log_d_max > max_d_m:
+            log_d_max = np.log10(max_d_m); changed = True
+        
+        if changed:
+            warnings.warn("Extended inversion grid was clipped by hard bounds; using the closest "
+                          "allowable limit(s).", UserWarning)
+        
+        n_bins = int(np.round((log_d_max - log_d_min) / binwidth)) + 1
+
+    # Recompute step to make endpoints exact, then build the grid
+    log_grid = np.linspace(log_d_min, log_d_max, n_bins, dtype=float)
+    
+    d_m = 10**log_grid
+    
+    return d_m

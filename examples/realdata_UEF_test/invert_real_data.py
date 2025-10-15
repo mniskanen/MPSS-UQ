@@ -83,14 +83,14 @@ if __name__ == '__main__':
     # =============================================================================
     
     # Mobility diameters for the inverted PSD
-    DMPS_prop['d_m'] = np.geomspace(5e-9, 2500e-9, num=60)
+    # inversion_grid = np.geomspace(1e-9, 2500e-9, num=50)
     
     # DMPS_prop['charging_model'] = 'LYF-interp-flux'
     DMPS_prop['charging_model'] = 'LYF-interp'
     # DMPS_prop['charging_model'] = 'Wiedensohler'
     DMPS_prop['max_charge'] = 4
     
-    DMPS = DifferentialMobilityParticleSizer(DMPS_prop)
+    DMPS = DifferentialMobilityParticleSizer(DMPS_prop)#, inversion_grid=inversion_grid)
     DMPS.set_charger_properties(1.35e-4, 1.60e-4)#, 1)
     DMPS.set_operating_conditions(290, 101325)
     
@@ -98,7 +98,7 @@ if __name__ == '__main__':
     expected_value = -2
     correlation_length = 5 / 16
     log_standard_deviation = 1.5
-    prior = smoothness_prior(DMPS_prop['d_m'], expected_value,
+    prior = smoothness_prior(DMPS.d_m, expected_value,
                              correlation_length, log_standard_deviation
                              )
     

@@ -62,8 +62,8 @@ measurement = generate_DMPS_measurement(DMPS_prop.copy(), scenario='Urban')
 # Step 3: Set up the inversion model
 # =============================================================================
 
-# Choose the mobility diameters for the inverted PSD
-DMPS_prop['d_m'] = np.geomspace(6e-9, 1000e-9, num=50)
+# Optionally specify the number of inversion bins
+n_inversion_bins = None
 
 
 # Set up the Gaussian smoothness prior. The values are given in log10-space.
@@ -74,11 +74,6 @@ DMPS_prop['d_m'] = np.geomspace(6e-9, 1000e-9, num=50)
 expected_value = -2
 correlation_length = 12 / 16
 log_standard_deviation = 1.5
-prior = smoothness_prior(DMPS_prop['d_m'],
-                         expected_value,
-                         correlation_length,
-                         log_standard_deviation
-                         )
 
 
 
@@ -87,15 +82,25 @@ prior = smoothness_prior(DMPS_prop['d_m'],
 # =============================================================================
 
 # Choose a charging model
-DMPS_prop['charging_model'] = 'Wiedensohler'
-DMPS_prop['max_charge'] = 4
+# DMPS_prop['charging_model'] = 'Wiedensohler'
+DMPS_prop['charging_model'] = 'LYF-interp'
+DMPS_prop['max_charge'] = 8
 
 # Create the DMPS object used in the inversion
-DMPS_inv = DifferentialMobilityParticleSizer(DMPS_prop)
+DMPS_inv = DifferentialMobilityParticleSizer(DMPS_prop,
+                                             n_bins=n_inversion_bins)
 
 DMPS_inv.set_operating_conditions(measurement.temperature,
                                   measurement.pressure
                                   )
+DMPS_inv.set_charger_properties(1.40e-4, 1.90e-4)
+
+# Create the prior
+prior = smoothness_prior(DMPS_inv.d_m,
+                         expected_value,
+                         correlation_length,
+                         log_standard_deviation
+                         )
 
 result = invert_psd(DMPS_inv, measurement, prior)
 
@@ -111,7 +116,8 @@ DMPS_properties_marg = DMPS_prop.copy()
 # for example the LYF-interp model
 DMPS_properties_marg['charging_model'] = 'LYF-interp'
 
-DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg)
+DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg,
+                                              n_bins=n_inversion_bins)
 
 DMPS_marg.set_operating_conditions(measurement.temperature,
                                    measurement.pressure
@@ -177,8 +183,10 @@ axs[2].set_ylim([y_min, y_max])
 
 
 # Calculate the true Ntot only for the sizes we consider in the inversion
-true_idx_1 = np.where(measurement.d_m_truth >= DMPS_prop['d_m'][0])[0][0]
-true_idx_2 = np.where(measurement.d_m_truth <= DMPS_prop['d_m'][-1])[0][-1]
+# TODO: this needs to be interpolated in the first and last bins so that the
+# particle numbers are accurate
+true_idx_1 = np.where(measurement.d_m_truth >= DMPS_inv.d_m[0])[0][0]
+true_idx_2 = np.where(measurement.d_m_truth <= DMPS_inv.d_m[-1])[0][-1]
 Ntot_true = np.sum(measurement.N_true[true_idx_1 : true_idx_2 + 1])
 Ntot_samples = result.Ntot_samples()
 Ntot_samples_marg = result_marg.Ntot_samples()

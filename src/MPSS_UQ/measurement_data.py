@@ -103,7 +103,7 @@ def generate_DMPS_measurement(DMPS_prop, scenario):
     '''
     
     # Mobility diameters that are used to represent the true PSD
-    DMPS_prop['d_m'] = np.geomspace(1e-9, 2500e-9, num=500)
+    d_m = np.geomspace(1e-9, 2500e-9, num=500)
 
     # Which bipolar charging model to use
     DMPS_prop['charging_model'] = 'LYF-interp'
@@ -112,7 +112,7 @@ def generate_DMPS_measurement(DMPS_prop, scenario):
     DMPS_prop['max_charge'] = 8
 
     # Create the data generating DMPS object
-    DMPS = DifferentialMobilityParticleSizer(DMPS_prop)
+    DMPS = DifferentialMobilityParticleSizer(DMPS_prop, inversion_grid=d_m)
     
     # Set the ambient temperature and pressure
     temperature = 293.15  # [K]
