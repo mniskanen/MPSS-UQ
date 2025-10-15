@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from MPSS_UQ.measurement_data import MeasurementDataset, measurement_loader
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer, lpm_to_m3s
-from MPSS_UQ.inversion import compute_posterior, compute_posterior_marginalize, smoothness_prior
+from MPSS_UQ.inversion import invert_psd, smoothness_prior
 from MPSS_UQ.inversion_results import InversionDataset
 from MPSS_UQ.plotfunctions import plot_posterior_summary, plot_Ntot_histogram
 
@@ -24,8 +24,8 @@ from read_dmps_files_labtest import load_and_process_data
 
 
 
-DO_PARALLEL = True
-DO_MARGINALIZATION = False
+DO_PARALLEL = False
+MARGINALIZE_ION_MOBILITY = False
 
 
 if __name__ == '__main__':
@@ -113,17 +113,11 @@ if __name__ == '__main__':
     if DO_PARALLEL:
         
         # Wrapper functions to get the iteration number for parallel execution
-        if DO_MARGINALIZATION:
-            def run_inversion(args):
-                idx, measurement = args
-                result = compute_posterior_marginalize(DMPS, prior, measurement)
-                return idx, result
-            
-        else:
-            def run_inversion(args):
-                idx, measurement = args
-                result = compute_posterior(DMPS, prior, measurement)
-                return idx, result
+        def run_inversion(args):
+            idx, measurement = args
+            result = invert_psd(DMPS, measurement, prior,
+                                marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY)
+            return idx, result
         
         # Set the number of processes
         n_cpus = psutil.cpu_count(logical=False)
@@ -150,11 +144,8 @@ if __name__ == '__main__':
             #                                   measurement.pressure * 1e2
             #                                   )
             
-            if DO_MARGINALIZATION:
-                result = compute_posterior_marginalize(DMPS, prior, measurement)
-            
-            else:
-                result = compute_posterior(DMPS, prior, measurement)
+            result = invert_psd(DMPS, measurement, prior,
+                                marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY)
             
             inv_dataset.assign_result(idx, result)
     

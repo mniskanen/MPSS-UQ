@@ -7,11 +7,7 @@ import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
-from MPSS_UQ.inversion import (compute_posterior,
-                               compute_posterior_marginalize,
-                               Laplace_approximation_marginalize,
-                               smoothness_prior
-                               )
+from MPSS_UQ.inversion import invert_psd, smoothness_prior
 from MPSS_UQ.measurement_data import generate_DMPS_measurement
 from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram
 
@@ -101,7 +97,7 @@ DMPS_inv.set_operating_conditions(measurement.temperature,
                                   measurement.pressure
                                   )
 
-result = compute_posterior(DMPS_inv, prior, measurement)
+result = invert_psd(DMPS_inv, measurement, prior)
 
 
 
@@ -122,11 +118,12 @@ DMPS_marg.set_operating_conditions(measurement.temperature,
                                    )
 
 # Marginalize over charger ion mobilities
-result_marg = compute_posterior_marginalize(DMPS_marg,
-                                            prior,
-                                            measurement,
-                                            num_samples=100000,  # more samples for cleaner plots
-                                            )
+result_marg = invert_psd(DMPS_marg,
+                         measurement,
+                         prior,
+                         marginalize_ion_mobility=True,
+                         num_samples=100000,  # more samples for cleaner plots
+                         )
 
 
 

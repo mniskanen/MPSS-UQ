@@ -15,59 +15,59 @@ p = psutil.Process(os.getpid())
 p.nice(psutil.HIGH_PRIORITY_CLASS)
 
 
-def compute_posterior(DMPS, prior, measurement):
-    ''' Compute and return the expected value and associated credibility intervals of the
-    posterior with the assumption of the charging probability specified in the DMPS model. '''
-    
-    MAP, post_cov = Laplace_approximation(DMPS, prior, measurement)
-    
-    return InversionResult(DMPS.d_m, post_mean_log10=MAP, post_cov_log10=post_cov)
-
-
-def compute_posterior_marginalize(DMPS,
-                                  prior,
-                                  measurement,
-                                  marginalize_ion_mobility=True,
-                                  marginalize_ion_ratio=False,
-                                  method='sampling',
-                                  num_samples=5000,
-                                  ):
-    ''' Compute and return the conditional mean value and associated credibility intervals of
-    the posterior marginalized over a range of ion mobilities using the LYF model.
-    Method ('sampling' or 'gaussian-approximation') refers to the way the posterior is represented.
-    Sampling is more accurate (given enough samples) but can be a bit slower and takes much more
-    memory than Gaussian approximation.
+def invert_psd(
+        DMPS,         # DMPS or SMPS
+        measurement,  # Measurement
+        prior=None,   # If None, builds a default smoothness prior from DMPS.d_m TODO
+        marginalize_ion_mobility=False,
+        marginalize_ion_ratio=False,
+        method='sampling',
+        num_samples=5000,
+        ):
+    ''' Estimate the particle size distribution (PSD) from an MPSS measurement and
+    return an InversionResult containing posterior summaries or samples.
+    Marginalization can be carried over over a range of ion mobilities and ratios using
+    the LYF model. Method ('sampling' or 'gaussian-approximation') refers to the way
+    the marginalized posterior is represented. Sampling is more accurate (given enough
+    samples) but can be a bit slower and takes much more memory than Gaussian
+    approximation.
     '''
     
-    if method == 'sampling':
-        posterior_samples = Laplace_approximation_marginalize(DMPS,
-                                                              prior,
-                                                              measurement,
-                                                              marginalize_ion_mobility,
-                                                              marginalize_ion_ratio,
-                                                              method,
-                                                              num_samples=num_samples,
-                                                              )
-        
-        return InversionResult(DMPS.d_m, post_samples=posterior_samples)
-        
-    elif method == 'gaussian-approximation':
-        posterior_mean, posterior_covariance = Laplace_approximation_marginalize(
-            DMPS,
-            prior,
-            measurement,
-            marginalize_ion_mobility,
-            marginalize_ion_ratio,
-            method,
-            )
-        
-        return InversionResult(DMPS.d_m,
-                               post_mean=posterior_mean,
-                               post_cov=posterior_covariance
-                               )
+    if marginalize_ion_mobility is False and marginalize_ion_ratio is False:
+        MAP, post_cov = Laplace_approximation(DMPS, prior, measurement)
+        return InversionResult(DMPS.d_m, post_mean_log10=MAP, post_cov_log10=post_cov)
     
     else:
-        raise ValueError('Unknkown marginalization method')
+        
+        if method == 'sampling':
+            posterior_samples = Laplace_approximation_marginalize(DMPS,
+                                                                  prior,
+                                                                  measurement,
+                                                                  marginalize_ion_mobility,
+                                                                  marginalize_ion_ratio,
+                                                                  method,
+                                                                  num_samples=num_samples,
+                                                                  )
+            
+            return InversionResult(DMPS.d_m, post_samples=posterior_samples)
+            
+        elif method == 'gaussian-approximation':
+            posterior_mean, posterior_covariance = Laplace_approximation_marginalize(
+                DMPS,
+                prior,
+                measurement,
+                marginalize_ion_mobility,
+                marginalize_ion_ratio,
+                method,
+                )
+            
+            return InversionResult(DMPS.d_m,
+                                   post_mean=posterior_mean,
+                                   post_cov=posterior_covariance
+                                   )
+        
+        else:
+            raise ValueError('Unknkown marginalization method')
 
 
 def log_post(vals, DMPS, L_noise, prior, y_meas):
