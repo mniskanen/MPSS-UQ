@@ -130,7 +130,7 @@ class InversionResult:
         if self.input_mode == 'gaussian-log10':
             return np.diag(self.post_cov_log10)
         elif self.input_mode == 'samples':
-            return np.var(np.log10(self.post_samples))
+            return np.var(np.log10(self.post_samples), axis=0)
     
     
     def posterior_summary(self, coverage=95):
