@@ -32,10 +32,27 @@ def invert_psd(
     samples) but can be a bit slower and takes much more memory than Gaussian
     approximation.
     '''
+    # Calculate the measured reporting_range:
+    eps = 1e-16
+    lo = DMPS.d_m_data.min() - eps
+    hi = DMPS.d_m_data.max() + eps
+    
+    i_start = np.searchsorted(DMPS.d_m, lo, side='left')
+    i_stop  = np.searchsorted(DMPS.d_m, hi, side='right')
+    
+    # Take the bins just outside the range to make sure to show the whole measured range
+    i_start = max(0, i_start - 1)
+    i_stop = min(len(DMPS.d_m), i_stop + 1)
+        
+    sl_measured = slice(i_start, i_stop)
     
     if marginalize_ion_mobility is False and marginalize_ion_ratio is False:
         MAP, post_cov = Laplace_approximation(DMPS, prior, measurement)
-        return InversionResult(DMPS.d_m, post_mean_log10=MAP, post_cov_log10=post_cov)
+        return InversionResult(DMPS.d_m,
+                               post_mean_log10=MAP,
+                               post_cov_log10=post_cov,
+                               sl_measured=sl_measured,
+                               )
     
     else:
         
@@ -49,7 +66,10 @@ def invert_psd(
                                                                   num_samples=num_samples,
                                                                   )
             
-            return InversionResult(DMPS.d_m, post_samples=posterior_samples)
+            return InversionResult(DMPS.d_m,
+                                   post_samples=posterior_samples,
+                                   sl_measured=sl_measured,
+                                   )
             
         elif method == 'gaussian-approximation':
             posterior_mean, posterior_covariance = Laplace_approximation_marginalize(
@@ -63,7 +83,8 @@ def invert_psd(
             
             return InversionResult(DMPS.d_m,
                                    post_mean=posterior_mean,
-                                   post_cov=posterior_covariance
+                                   post_cov=posterior_covariance,
+                                   sl_measured=sl_measured,
                                    )
         
         else:

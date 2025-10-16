@@ -139,6 +139,10 @@ result_marg = invert_psd(DMPS_marg,
 
 CI_coverage = 95
 
+# Set these to plot the full inverted range:
+# result.set_reporting_range('full')
+# result_marg.set_reporting_range('full')
+
 # To return the estimate mean value and lower and upper limits of the credible intervals, do:
 # mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
 
@@ -158,7 +162,7 @@ fig.suptitle('True and estimated PSDs')
 plot_posterior_summary(axs[0], result, CI_coverage)
 plot_psd(axs[0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
 axs[0].set_yscale('linear')
-axs[0].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
+axs[0].set_xlim([result.d_m[0] * 1e9, result.d_m[-1] * 1e9])
 axs[0].grid('on')
 axs[0].legend()
 axs[0].set_title('a) PSD estimate, charging uncertainty not considered', loc='left')
@@ -167,7 +171,7 @@ axs[0].set_title('a) PSD estimate, charging uncertainty not considered', loc='le
 plot_posterior_summary(axs[2], result_marg, CI_coverage)
 plot_psd(axs[2], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
 axs[2].set_yscale('linear')
-axs[2].set_xlim([DMPS_marg.d_m[0] * 1e9, DMPS_marg.d_m[-1] * 1e9])
+axs[2].set_xlim([result_marg.d_m[0] * 1e9, result_marg.d_m[-1] * 1e9])
 axs[2].grid('on')
 axs[2].legend()
 axs[2].set_title('b) PSD estimate, marginalized charging uncertainty', loc='left')
@@ -185,8 +189,8 @@ axs[2].set_ylim([y_min, y_max])
 # Calculate the true Ntot only for the sizes we consider in the inversion
 # TODO: this needs to be interpolated in the first and last bins so that the
 # particle numbers are accurate
-true_idx_1 = np.where(measurement.d_m_truth >= DMPS_inv.d_m[0])[0][0]
-true_idx_2 = np.where(measurement.d_m_truth <= DMPS_inv.d_m[-1])[0][-1]
+true_idx_1 = np.where(measurement.d_m_truth >= result.d_m[0])[0][0]
+true_idx_2 = np.where(measurement.d_m_truth <= result.d_m[-1])[0][-1]
 Ntot_true = np.sum(measurement.N_true[true_idx_1 : true_idx_2 + 1])
 Ntot_samples = result.Ntot_samples()
 Ntot_samples_marg = result_marg.Ntot_samples()

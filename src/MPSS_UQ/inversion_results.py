@@ -43,19 +43,21 @@ class InversionResult:
     """
     
     def __init__(self,
-                 d_m,
+                 d_m_full,
                  post_mean=None,
                  post_cov=None,
                  post_mean_log10=None,
                  post_cov_log10=None,
                  post_samples=None,
+                 sl_measured=None,
+                 reporting_range='measured',
                  ):
         
         # Particle size vector
-        self.d_m = d_m
+        self._d_m_full = d_m_full
         
-        # Helper for plotting the results
-        self.binwidth = np.log10(self.d_m[1]) - np.log10(self.d_m[0])
+        # Helper for plotting the results (assume the bin widths stay constant)
+        self.binwidth = np.log10(self._d_m_full[1]) - np.log10(self._d_m_full[0])
         
         # Check the inputs
         input1 = post_mean is not None and post_cov is not None
@@ -83,43 +85,65 @@ class InversionResult:
             self.post_samples = post_samples
             self.input_mode = 'samples'
         
+        # Store the slice that was used to get the reported size range from the full inverted
+        # size range
+        self.sl_measured = sl_measured
+        
+        self.set_reporting_range(reporting_range)
+        
         # Set up rng
         self.rng = np.random.default_rng()
+    
+    
+    def set_reporting_range(self, reporting_range : str):
+        
+        if reporting_range == 'measured':
+            self.sl = self.sl_measured
+            self.d_m = self._d_m_full[self.sl]
+            self.reporting_range = 'measured'
+        
+        elif reporting_range == 'full':
+            self.sl = slice(0, len(self._d_m_full))
+            self.d_m = self._d_m_full
+            self.reporting_range = 'measured'
+        
+        else:
+            raise ValueError("Unknown reporting range. Use 'measured' or 'full'.")
     
     
     def _postprocess_resuts_from_covariance_linear(self, CI):
         
         # Calculate the requested credible interval estimates
-        sigma = np.sqrt(np.diag(self.post_cov))
+        sigma = np.sqrt(np.diag(self.post_cov[self.sl, self.sl]))
         k = norm.ppf(0.5 + CI / 100 / 2)
         
-        CI_lower = self.post_mean - k * sigma
-        CI_upper = self.post_mean + k * sigma
+        CI_lower = self.post_mean[self.sl] - k * sigma
+        CI_upper = self.post_mean[self.sl] + k * sigma
         
-        return self.post_mean, CI_lower, CI_upper
+        return self.post_mean[self.sl], CI_lower, CI_upper
     
     
     def _postprocess_resuts_from_covariance_log10(self, CI):
         
         # Calculate the requested credible interval estimates
-        sigma = np.sqrt(np.diag(self.post_cov_log10))
+        sigma = np.sqrt(np.diag(self.post_cov_log10[self.sl, self.sl]))
         k = norm.ppf(0.5 + CI / 100 / 2)
         
-        CI_lower = 10**(self.post_mean_log10 - k * sigma)
-        CI_upper = 10**(self.post_mean_log10 + k * sigma)
+        CI_lower = 10**(self.post_mean_log10[self.sl] - k * sigma)
+        CI_upper = 10**(self.post_mean_log10[self.sl] + k * sigma)
         
-        return 10**self.post_mean_log10, CI_lower, CI_upper
+        return 10**self.post_mean_log10[self.sl], CI_lower, CI_upper
     
     
     def _postprocess_resuts_from_samples(self, CI):
         
-        post_mean = np.mean(self.post_samples, axis=0)
+        post_mean = np.mean(self.post_samples[:, self.sl], axis=0)
         
         # Highest density intervals
         CI_lower = np.zeros(self.d_m.shape[0])
         CI_upper = np.zeros_like(CI_lower)
-        for i in range(self.d_m.shape[0]):
-            CI_lower[i], CI_upper[i] = highest_density_interval(self.post_samples[:, i], CI / 100)
+        for j, i in enumerate(range(self.sl.start, self.sl.stop)):
+            CI_lower[j], CI_upper[j] = highest_density_interval(self.post_samples[:, i], CI / 100)
             
         return post_mean, CI_lower, CI_upper
     
@@ -128,9 +152,9 @@ class InversionResult:
         """ Calculate (if needed) and return the posterior variance.
         """
         if self.input_mode == 'gaussian-log10':
-            return np.diag(self.post_cov_log10)
+            return np.diag(self.post_cov_log10[self.sl, self.sl])
         elif self.input_mode == 'samples':
-            return np.var(np.log10(self.post_samples), axis=0)
+            return np.var(np.log10(self.post_samples[:, self.sl]), axis=0)
     
     
     def posterior_summary(self, coverage=95):
@@ -159,11 +183,11 @@ class InversionResult:
         
         if self.input_mode == 'samples':
             if n_samples is None:
-                return np.sum(self.post_samples, axis=1)
+                return np.sum(self.post_samples[:, self.sl], axis=1)
             
             elif n_samples <= len(self.post_samples):
                 sample_idxs = self.rng.choice(len(self.post_samples), n_samples, replace=False)
-                return np.sum(self.post_samples[sample_idxs], axis=1)
+                return np.sum(self.post_samples[sample_idxs, self.sl], axis=1)
             
             else:
                 raise ValueError(
@@ -175,15 +199,15 @@ class InversionResult:
             n_samples = 5000
         
         if self.input_mode == 'gaussian-linear':
-            mean_tot = np.sum(self.post_mean)
-            var_tot = np.sum(self.post_cov)
+            mean_tot = np.sum(self.post_mean[self.sl])
+            var_tot = np.sum(self.post_cov[self.sl, self.sl])
             Ntot_samples = self.rng.normal(loc=mean_tot, scale=var_tot, size=n_samples)
             return Ntot_samples
         
         elif self.input_mode == 'gaussian-log10':
             # We have to sample because of the nonlinear transformation
-            L = np.linalg.cholesky(self.post_cov_log10)
-            post_samples_log10 = self.post_mean_log10[:, None] + L @ self.rng.normal(
+            L = np.linalg.cholesky(self.post_cov_log10[self.sl, self.sl])
+            post_samples_log10 = self.post_mean_log10[self.sl, None] + L @ self.rng.normal(
                 loc=0.0, scale=1.0, size=(L.shape[0], n_samples)
                 )
             # Do 10^samples, but using np.exp (faster)

@@ -161,21 +161,22 @@ if __name__ == '__main__':
     
     # Summarize the posterior of each measurement
     means, CI_lower, CI_upper = inv_dataset.posterior_summary(coverage=CI_coverage)
+    d_m = inv_dataset.results[0].d_m  # d_m of the stored results
     
     fig, axs = plt.subplots(nrows=2, ncols=1, num=10, clear=True)
-    binwidth = np.log10(DMPS.d_m[1]) - np.log10(DMPS.d_m[0])
+    binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
     
     Z = means.T / binwidth
     
     plt_N_min = 10**0#np.min(Z)
     plt_N_max = np.max(Z)
-    im = axs[0].pcolormesh(*np.meshgrid(datetimes, DMPS.d_m * 1e9), Z,
+    im = axs[0].pcolormesh(*np.meshgrid(datetimes, d_m * 1e9), Z,
                        norm=colors.LogNorm(vmin=plt_N_min, vmax=plt_N_max),
                        cmap='viridis')
     
     axs[0].set_yscale('log')
     axs[0].yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
-    axs[0].set_yticks([DMPS.d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, DMPS.d_m[-1] * 1e9])
+    axs[0].set_yticks([d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
     
     axs[0].set_ylabel('Particle diameter (nm)')
     axs[0].set_xlabel('Time')
@@ -189,13 +190,13 @@ if __name__ == '__main__':
     plotval = CI_width.T / binwidth
     plt_CIw_min = np.min(plotval)  #10**-1.5
     plt_CIw_max = np.max(plotval)
-    im = axs[1].pcolormesh(*np.meshgrid(datetimes, DMPS.d_m * 1e9), plotval,
+    im = axs[1].pcolormesh(*np.meshgrid(datetimes, d_m * 1e9), plotval,
                        norm=colors.LogNorm(vmin=plt_CIw_min, vmax=plt_CIw_max),
                        cmap='Blues_r')
     
     axs[1].set_yscale('log')
     axs[1].yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
-    axs[1].set_yticks([DMPS.d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, DMPS.d_m[-1] * 1e9])
+    axs[1].set_yticks([d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
     
     axs[1].set_ylabel('Particle diameter (nm)')
     axs[1].set_xlabel('Time')
@@ -209,18 +210,18 @@ if __name__ == '__main__':
     
     
     # Variance reduction plot
-    prior_variance = np.diag(prior['covariance'])
+    prior_variance = np.diag(prior['covariance'])[inv_dataset.results[0].sl]
     post_variance = inv_dataset.posterior_variance()
     VR = np.log10(post_variance / prior_variance)
     
     fig, ax = plt.subplots(nrows=1, ncols=1, num=100, clear=True)
-    im = ax.pcolormesh(*np.meshgrid(datetimes, DMPS.d_m * 1e9), VR.T,
+    im = ax.pcolormesh(*np.meshgrid(datetimes, d_m * 1e9), VR.T,
                        cmap='Blues_r')
     cbar = fig.colorbar(im, ax=ax, label=r'$\log_{10}(\sigma_\mathrm{post}^2 / \sigma_\mathrm{prior}^2)$')
     
     ax.set_yscale('log')
     ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
-    ax.set_yticks([DMPS.d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, DMPS.d_m[-1] * 1e9])
+    ax.set_yticks([d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
     ax.set_ylabel('Particle diameter (nm)')
     ax.set_xlabel('Time')
     ax.set_title('log variance reduction')
@@ -248,7 +249,7 @@ if __name__ == '__main__':
     
     plot_posterior_summary(axs[0], inv_dataset.results[idx_1], CI_coverage)
     axs[0].set_yscale('linear')
-    axs[0].set_xlim([DMPS.d_m[0] * 1e9, DMPS.d_m[-1] * 1e9])
+    axs[0].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
     axs[0].grid('on')
     axs[0].legend()
     axs[0].set_title(
@@ -260,7 +261,7 @@ if __name__ == '__main__':
     
     plot_posterior_summary(axs[2], inv_dataset.results[idx_2], CI_coverage)
     axs[2].set_yscale('linear')
-    axs[2].set_xlim([DMPS.d_m[0] * 1e9, DMPS.d_m[-1] * 1e9])
+    axs[2].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
     axs[2].grid('on')
     axs[2].legend()
     axs[2].set_title(
