@@ -105,7 +105,7 @@ class InversionResult:
         elif reporting_range == 'full':
             self.sl = slice(0, len(self._d_m_full))
             self.d_m = self._d_m_full
-            self.reporting_range = 'measured'
+            self.reporting_range = 'full'
         
         else:
             raise ValueError("Unknown reporting range. Use 'measured' or 'full'.")

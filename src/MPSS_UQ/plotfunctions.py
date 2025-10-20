@@ -17,6 +17,7 @@ def plot_psd(ax, d_m, N, *args, **kwargs):
     
     ax.set_xlabel('Particle mobility diameter (nm)')
     ax.set_ylabel(r'dN / d$\log$d$_m$')
+    ax.legend()
 
 
 def plot_posterior_summary(ax, result, CI_coverage=95):
@@ -37,6 +38,8 @@ def plot_posterior_summary(ax, result, CI_coverage=95):
                     )
     
     plot_psd(ax, result.d_m, N=N_mean, linestyle='-', color='C0', label='Posterior mean')
+    
+    ax.legend()
 
 
 def plot_system_matrix(DMPS, num=None, title=None):

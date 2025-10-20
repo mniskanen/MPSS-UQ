@@ -193,7 +193,7 @@ def generate_DMPS_measurement(DMPS_prop, scenario):
                               pressure,
                               N_true=N_true,
                               scenario=scenario,
-                              d_m_truth=DMPS_prop['d_m'],
+                              d_m_truth=d_m,
                               )
     
     measurement.preprocess()

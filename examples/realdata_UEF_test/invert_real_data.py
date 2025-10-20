@@ -116,7 +116,8 @@ if __name__ == '__main__':
         def run_inversion(args):
             idx, measurement = args
             result = invert_psd(DMPS, measurement, prior,
-                                marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY)
+                                marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY,
+                                )
             return idx, result
         
         # Set the number of processes
@@ -145,7 +146,8 @@ if __name__ == '__main__':
             #                                   )
             
             result = invert_psd(DMPS, measurement, prior,
-                                marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY)
+                                marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY
+                                )
             
             inv_dataset.assign_result(idx, result)
     
@@ -251,36 +253,29 @@ if __name__ == '__main__':
     axs[0].set_yscale('linear')
     axs[0].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
     axs[0].grid('on')
-    axs[0].legend()
     axs[0].set_title(
         f'Size distribution on {datetime_1.date()} at {datetime_1.time()}',
         loc='center'
         )
-    axs[0].set_ylim(0, 4000)
     
     
     plot_posterior_summary(axs[2], inv_dataset.results[idx_2], CI_coverage)
     axs[2].set_yscale('linear')
     axs[2].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
     axs[2].grid('on')
-    axs[2].legend()
     axs[2].set_title(
         f'Size distribution on {datetime_2.date()} at {datetime_2.time()}',
         loc='center'
         )
-    axs[2].set_ylim(0, 2000)
     
     Ntot_samples_1 = inv_dataset.results[idx_1].Ntot_samples()
     Ntot_samples_2 = inv_dataset.results[idx_2].Ntot_samples()
     plot_Ntot_histogram(axs[1], Ntot_samples_1)
     plot_Ntot_histogram(axs[3], Ntot_samples_2)
     
-    
     line = Line2D([0.075, 0.95], [0.50, 0.50], transform=fig.transFigure,
                   color='black', linewidth=4)
     fig.add_artist(line)
-
-    
     
     fig.tight_layout()
     plt.show()
