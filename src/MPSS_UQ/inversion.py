@@ -21,16 +21,13 @@ def invert_psd(
         prior=None,   # If None, builds a default smoothness prior from DMPS.d_m TODO
         marginalize_ion_mobility=False,
         marginalize_ion_ratio=False,
-        method='sampling',
         num_samples=5000,
         ):
     ''' Estimate the particle size distribution (PSD) from an MPSS measurement and
     return an InversionResult containing posterior summaries or samples.
     Marginalization can be carried over over a range of ion mobilities and ratios using
-    the LYF model. Method ('sampling' or 'gaussian-approximation') refers to the way
-    the marginalized posterior is represented. Sampling is more accurate (given enough
-    samples) but can be a bit slower and takes much more memory than Gaussian
-    approximation.
+    the LYF model.
+    num_samples is the number of posterior samples returned when doing marginalization.
     '''
     # Calculate the measured reporting_range:
     eps = 1e-16
@@ -55,40 +52,17 @@ def invert_psd(
                                )
     
     else:
-        
-        if method == 'sampling':
-            posterior_samples = Laplace_approximation_marginalize(DMPS,
-                                                                  prior,
-                                                                  measurement,
-                                                                  marginalize_ion_mobility,
-                                                                  marginalize_ion_ratio,
-                                                                  method,
-                                                                  num_samples=num_samples,
-                                                                  )
-            
-            return InversionResult(DMPS.d_m,
-                                   post_samples=posterior_samples,
-                                   sl_measured=sl_measured,
-                                   )
-            
-        elif method == 'gaussian-approximation':
-            posterior_mean, posterior_covariance = Laplace_approximation_marginalize(
-                DMPS,
-                prior,
-                measurement,
-                marginalize_ion_mobility,
-                marginalize_ion_ratio,
-                method,
-                )
-            
-            return InversionResult(DMPS.d_m,
-                                   post_mean=posterior_mean,
-                                   post_cov=posterior_covariance,
-                                   sl_measured=sl_measured,
-                                   )
-        
-        else:
-            raise ValueError('Unknkown marginalization method')
+        posterior_samples = Laplace_approximation_marginalize(DMPS,
+                                                              prior,
+                                                              measurement,
+                                                              marginalize_ion_mobility,
+                                                              marginalize_ion_ratio,
+                                                              num_samples=num_samples,
+                                                              )
+        return InversionResult(DMPS.d_m,
+                               post_samples=posterior_samples,
+                               sl_measured=sl_measured,
+                               )
 
 
 def log_post(vals, DMPS, L_noise, prior, y_meas):
@@ -218,12 +192,11 @@ def Laplace_approximation_marginalize(DMPS,
                                       measurement,
                                       marginalize_ion_mobility,
                                       marginalize_ion_ratio,
-                                      method='sampling',
                                       num_samples=5000,
                                       ):
     
     ''' Calculate the marginalized posterior of the PSD. Can marginalize over the ion mobilities
-    and/or the ratio of positive to negative ions.
+    and/or the ratio of positive to negative ions. Returns samples from the posterior mixture.
     
     Input:
         DMPS - an initialized instance of the DifferentialMobilityParticleSizer class
@@ -231,17 +204,10 @@ def Laplace_approximation_marginalize(DMPS,
         measurement - a dictionary with data on the measurement
         marginalize_ion_mobility - True/False
         marginalize_ion_ratio - True/False
-        method - 'sampling' or 'gaussian-approximation'
-                 'sampling' returns samples from the posterior mixture.
-                 'gaussian-approximation' returns the mean and covariance of the
-                 posterior calculated with an analytical formula from the means 
-                 and covariances of the individual mixtures.
-        num_samples - (if using sampling) number of samples drawn from the posterior mixture.
+        num_samples - number of samples drawn from the posterior mixture.
     
     Output:
         posterior_mixture_samples - a vector consisting of draws from the marginalized posterior
-        OR
-        posterior_mean, posterior_covariance - of the mixture density.
     '''
     
     # Set seed for reproducibility
@@ -286,8 +252,7 @@ def Laplace_approximation_marginalize(DMPS,
     MAP_estimates_log10 = np.zeros((n_invert, n_bins))
     posterior_covs_log10 = np.zeros((n_invert, n_bins, n_bins))
     log_posts = np.zeros((n_gridpoints_pos, n_gridpoints_neg)) * np.nan
-    if method == 'sampling':
-        posterior_cov_Ls_log10 = np.zeros((n_invert, n_bins, n_bins)) * np.nan
+    posterior_cov_Ls_log10 = np.zeros((n_invert, n_bins, n_bins)) * np.nan
     
     # Starting guess for the Laplace approximation
     N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
@@ -318,8 +283,7 @@ def Laplace_approximation_marginalize(DMPS,
                     )
                 
                 # Calculate the Cholesky factor
-                if method == 'sampling':
-                    posterior_cov_Ls_log10[i] = np.linalg.cholesky(posterior_covs_log10[i])
+                posterior_cov_Ls_log10[i] = np.linalg.cholesky(posterior_covs_log10[i])
                 
                 # Use the current MAP estimate as a starting guess for the next one
                 # (it _probably_ is quite close to the truth)
@@ -335,71 +299,40 @@ def Laplace_approximation_marginalize(DMPS,
     mixture_probabilities = np.ones(mixtures.shape[0])
     mixture_probabilities /= np.sum(mixture_probabilities)
     
-    if method == 'sampling':
-        # First calculate, proportional to mixture_probabilities, how many times
-        # each mixture component should be sampled (counts)
-        counts = mixture_probabilities * num_samples
-        counts = np.floor(counts).astype(int)
-        
-        # The above rounds the number of counts down because they have to be integers.
-        # Let's add in at random (but proportional to mixture_probabilities)
-        # the missing numbers of counts using rng.choice()
-        n_missing = num_samples - np.sum(counts)
-        extra_components = rng.choice(len(mixture_probabilities),
-                                      size=n_missing,
-                                      p=mixture_probabilities
-                                      )
-        extra_counts = np.bincount(extra_components, minlength=len(mixture_probabilities))
-        counts += extra_counts
-        
-        # Then sample each component in batches
-        posterior_mixture_samples = np.zeros((num_samples, n_bins),
-                                             dtype=np.float32
-                                             )
-        start = 0
-        for comp_idx, count in enumerate(counts):
-            if count == 0:
-                continue
-            posterior_mixture_samples[start:start+count] = np.power(10,
-                MAP_estimates_log10[comp_idx][:, None]
-                + posterior_cov_Ls_log10[comp_idx] @ rng.normal(loc=0.0,
-                                                                scale=1.0,
-                                                                size=(n_bins, count)
-                                                                )
-                ).T
-            start += count
-        
-        return posterior_mixture_samples
+    # First calculate, proportional to mixture_probabilities, how many times
+    # each mixture component should be sampled (counts)
+    counts = mixture_probabilities * num_samples
+    counts = np.floor(counts).astype(int)
     
-    elif method == 'gaussian-approximation':
-        
-        # Calculate the mean and covariance of the mixture analytically in the linear space.
-        # We have to first transform each mixture component from log10 to linear space, and only
-        # then can we compute the mean and covariance.
-        posterior_means = np.zeros_like(MAP_estimates_log10)
-        for i in range(n_invert):
-            posterior_means[i] = 10**MAP_estimates_log10[i] * np.exp(
-                1 / 2 * np.diag(posterior_covs_log10[i]) * np.log(10)**2
-                )
-        posterior_mean = mixture_probabilities @ posterior_means
-        posterior_covariances = np.zeros_like(posterior_covs_log10)
-        I = np.eye(len(posterior_mean))
-        # Only consider the diagonal of the covariance here
-        for i in range(n_invert):
-            posterior_covariances[i] = np.outer(posterior_means[i], posterior_means[i]) * (
-                np.diag(np.exp(np.diag(posterior_covs_log10[i]) * np.log(10)**2)) - I
-                )
-        posterior_covariance = np.zeros_like(posterior_covs_log10[0])
-        for i in range(n_invert):
-            mean_diff = posterior_means[i] - posterior_mean
-            posterior_covariance += mixture_probabilities[i] * (
-                posterior_covariances[i] + np.outer(mean_diff, mean_diff)
-                )
-        
-        return posterior_mean, posterior_covariance
+    # The above rounds the number of counts down because they have to be integers.
+    # Let's add in at random (but proportional to mixture_probabilities)
+    # the missing numbers of counts using rng.choice()
+    n_missing = num_samples - np.sum(counts)
+    extra_components = rng.choice(len(mixture_probabilities),
+                                  size=n_missing,
+                                  p=mixture_probabilities
+                                  )
+    extra_counts = np.bincount(extra_components, minlength=len(mixture_probabilities))
+    counts += extra_counts
     
-    else:
-        raise ValueError('Uknown mixing method')
+    # Then sample each component in batches
+    posterior_mixture_samples = np.zeros((num_samples, n_bins),
+                                         dtype=np.float32
+                                         )
+    start = 0
+    for comp_idx, count in enumerate(counts):
+        if count == 0:
+            continue
+        posterior_mixture_samples[start:start+count] = np.power(10,
+            MAP_estimates_log10[comp_idx][:, None]
+            + posterior_cov_Ls_log10[comp_idx] @ rng.normal(loc=0.0,
+                                                            scale=1.0,
+                                                            size=(n_bins, count)
+                                                            )
+            ).T
+        start += count
+    
+    return posterior_mixture_samples
 
 
 def linesearch(fn, direction, N_0, previous_best_f_value, *args):

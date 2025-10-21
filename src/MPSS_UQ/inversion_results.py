@@ -37,15 +37,16 @@ class InversionResult:
     """
     Represents the inversion result for a single measurement.
 
-    Supports a Gaussian posterior approximation (MAP + covariance) in the linear and
-    log10 versions, and posterior samples, but only one of them at a time.
+    Supports specifying the posterior with
+        1) a log10-Gaussian approximation (MAP + covariance),
+        2) samples from the posterior,
+    but only one of them at a time.
+    
     Computes the credible intervals on demand.
     """
     
     def __init__(self,
                  d_m_full,
-                 post_mean=None,
-                 post_cov=None,
                  post_mean_log10=None,
                  post_cov_log10=None,
                  post_samples=None,
@@ -60,28 +61,22 @@ class InversionResult:
         self.binwidth = np.log10(self._d_m_full[1]) - np.log10(self._d_m_full[0])
         
         # Check the inputs
-        input1 = post_mean is not None and post_cov is not None
-        input2 = post_mean_log10 is not None and post_cov_log10 is not None
-        input3 = post_samples is not None
+        input1 = post_mean_log10 is not None and post_cov_log10 is not None
+        input2 = post_samples is not None
         
-        given_inputs = np.sum([input1, input2, input3])
+        given_inputs = np.sum([input1, input2])
         
         if given_inputs == 0:
-            raise ValueError('No valid input provided. Specify one of the three input types.')
+            raise ValueError('No valid input provided. Specify one of the two input types.')
         elif given_inputs > 1:
             raise ValueError('Multiple inputs provided. Specify only one input.')
         
         if input1:
-            self.post_mean = post_mean
-            self.post_cov = post_cov
-            self.input_mode = 'gaussian-linear'
-        
-        elif input2:
             self.post_mean_log10 = post_mean_log10
             self.post_cov_log10 = post_cov_log10
             self.input_mode = 'gaussian-log10'
         
-        elif input3:
+        elif input2:
             self.post_samples = post_samples
             self.input_mode = 'samples'
         
@@ -109,18 +104,6 @@ class InversionResult:
         
         else:
             raise ValueError("Unknown reporting range. Use 'measured' or 'full'.")
-    
-    
-    def _postprocess_resuts_from_covariance_linear(self, CI):
-        
-        # Calculate the requested credible interval estimates
-        sigma = np.sqrt(np.diag(self.post_cov[self.sl, self.sl]))
-        k = norm.ppf(0.5 + CI / 100 / 2)
-        
-        CI_lower = self.post_mean[self.sl] - k * sigma
-        CI_upper = self.post_mean[self.sl] + k * sigma
-        
-        return self.post_mean[self.sl], CI_lower, CI_upper
     
     
     def _postprocess_resuts_from_covariance_log10(self, CI):
@@ -166,9 +149,7 @@ class InversionResult:
         if coverage <= 0 or coverage >= 100:
             raise ValueError('Invalid value for posterior coverage. It should be in (0, 100).')
         
-        if self.input_mode == 'gaussian-linear':
-            return self._postprocess_resuts_from_covariance_linear(coverage)
-        elif self.input_mode == 'gaussian-log10':
+        if self.input_mode == 'gaussian-log10':
             return self._postprocess_resuts_from_covariance_log10(coverage)
         elif self.input_mode == 'samples':
             return self._postprocess_resuts_from_samples(coverage)
@@ -195,16 +176,10 @@ class InversionResult:
                     f'only n={len(self.post_samples)} posterior samples.'
                     )
         
-        if n_samples is None:
-            n_samples = 5000
-        
-        if self.input_mode == 'gaussian-linear':
-            mean_tot = np.sum(self.post_mean[self.sl])
-            var_tot = np.sum(self.post_cov[self.sl, self.sl])
-            Ntot_samples = self.rng.normal(loc=mean_tot, scale=var_tot, size=n_samples)
-            return Ntot_samples
-        
         elif self.input_mode == 'gaussian-log10':
+            if n_samples is None:
+                n_samples = 5000
+            
             # We have to sample because of the nonlinear transformation
             L = np.linalg.cholesky(self.post_cov_log10[self.sl, self.sl])
             post_samples_log10 = self.post_mean_log10[self.sl, None] + L @ self.rng.normal(
