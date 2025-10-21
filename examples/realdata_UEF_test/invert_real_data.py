@@ -95,8 +95,8 @@ if __name__ == '__main__':
     DMPS.set_operating_conditions(290, 101325)
     
     # Configure the prior
-    expected_value = -2
-    correlation_length = 5 / 16
+    expected_value = 0
+    correlation_length = 8 / 16
     log_standard_deviation = 1.5
     prior = smoothness_prior(DMPS.d_m, expected_value,
                              correlation_length, log_standard_deviation

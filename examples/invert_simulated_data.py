@@ -71,8 +71,8 @@ n_inversion_bins = None
 # the correlation length which controls the smoothness of the result w.r.t. particle size,
 # and the standard deviation which controls how large variations in the concentration
 # are allowed.
-expected_value = -2
-correlation_length = 12 / 16
+expected_value = 0
+correlation_length = 8 / 16
 log_standard_deviation = 1.5
 
 
