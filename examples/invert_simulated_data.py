@@ -186,17 +186,34 @@ axs[0].set_ylim([y_min, y_max])
 axs[2].set_ylim([y_min, y_max])
 
 
-# Calculate the true Ntot only for the sizes we consider in the inversion
-# TODO: this needs to be interpolated in the first and last bins so that the
-# particle numbers are accurate
-true_idx_1 = np.where(measurement.d_m_truth >= result.d_m[0])[0][0]
-true_idx_2 = np.where(measurement.d_m_truth <= result.d_m[-1])[0][-1]
-Ntot_true = np.sum(measurement.N_true[true_idx_1 : true_idx_2 + 1])
+# Calculate the true Ntot but only for sizes we consider in the inversion.
+# To compare them accurately, we need to consider the bin widths. Assuming here that
+# the widths of the data generating bins are smaller than that of the inversion bins.
+binwidth_inv_log10 = np.log10(result.d_m[1]) - np.log10(result.d_m[0])
+binwidth_fwd_log10 = np.log10(measurement.d_m_truth[1]) - np.log10(measurement.d_m_truth[0])
+inv_edge_small = 10**(np.log10(result.d_m[0]) - 0.5 * binwidth_inv_log10)
+inv_edge_large = 10**(np.log10(result.d_m[-1]) + 0.5 * binwidth_inv_log10)
+fwd_edges = 10**(np.concatenate((np.log10(measurement.d_m_truth) - 0.5 * binwidth_fwd_log10,
+                                [np.log10(measurement.d_m_truth[-1]) + 0.5 * binwidth_fwd_log10]))
+                 )
+# These indexes will refer to the bin centerpoints, and hence
+# left edge of bin k = fwd_edges[k]
+# right edge of bin k = fwd_edges[k+1]
+idx1 = np.where(fwd_edges >= inv_edge_small)[0][0]
+idx2 = np.where(fwd_edges <= inv_edge_large)[0][-1] - 1  # Take the right side edge of previous bin
+Ntot_true = np.sum(measurement.N_true[idx1 : idx2 + 1])
+# Include possible partial contributions from below the first and above the last bin
+if fwd_edges[idx1] > inv_edge_small:
+    fraction = (fwd_edges[idx1] - inv_edge_small) / (fwd_edges[idx1] - fwd_edges[idx1 - 1])
+    Ntot_true += fraction * measurement.N_true[idx1 - 1]
+if fwd_edges[idx2 + 1] < inv_edge_large:
+    fraction = (inv_edge_large - fwd_edges[idx2 + 1]) / (fwd_edges[idx2 + 2] - fwd_edges[idx2 + 1])
+    Ntot_true += fraction * measurement.N_true[idx2 + 1]
+
 Ntot_samples = result.Ntot_samples()
 Ntot_samples_marg = result_marg.Ntot_samples()
 xlimits = (min(np.min(Ntot_samples), np.min(Ntot_samples_marg)),
-           max(np.max(Ntot_samples), np.max(Ntot_samples_marg)),
-           )
+           max(np.max(Ntot_samples), np.max(Ntot_samples_marg)))
 plot_Ntot_histogram(axs[1], Ntot_samples, Ntot_true=Ntot_true, xlimits=xlimits)
 plot_Ntot_histogram(axs[3], Ntot_samples_marg, Ntot_true=Ntot_true, xlimits=xlimits)
 
