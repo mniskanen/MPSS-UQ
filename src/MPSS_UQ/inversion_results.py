@@ -43,14 +43,32 @@ class InversionResult:
     but only one of them at a time.
     
     Computes the credible intervals on demand.
+    
+    Parameters
+    ----------
+    d_m_full : 
+    sl_measured : slice
+        A slice indicating the start and stop indices of d_m_full that corresponds to the
+        measured size range.
+    post_mean_log10 : None,
+    post_cov_log10 : None,
+    post_samples : None,
+    ion_property_samples : array of floats or None, optional
+        Values of the positive and negative ion mobility and ion ratio at each post_sample.
+    reporting_range : 'measured' or 'full'
+        The size range considered for posterior summaries, can be changed later.
+        'measured' takes the shortest size interval in terms of inversion bins d_m_full such that
+        the measured size range is covered. 'full' uses the whole inverted size range.
     """
+    
     
     def __init__(self,
                  d_m_full,
+                 sl_measured,
                  post_mean_log10=None,
                  post_cov_log10=None,
                  post_samples=None,
-                 sl_measured=None,
+                 ion_property_samples=None,
                  reporting_range='measured',
                  ):
         
@@ -79,6 +97,8 @@ class InversionResult:
         elif input2:
             self.post_samples = post_samples
             self.input_mode = 'samples'
+            if ion_property_samples is not None:
+                self.ion_property_samples = ion_property_samples
         
         # Store the slice that was used to get the reported size range from the full inverted
         # size range
@@ -104,6 +124,10 @@ class InversionResult:
         
         else:
             raise ValueError("Unknown reporting range. Use 'measured' or 'full'.")
+        
+        # Reset the Cholesky decompositions of the post covariance
+        if self.input_mode == 'gaussian-log10':
+            self.cov_log10_cholesky = None
     
     
     def _postprocess_resuts_from_covariance_log10(self, CI):
@@ -189,6 +213,24 @@ class InversionResult:
             post_samples = np.exp(post_samples_log10 * np.log(10))
             Ntot_samples = np.sum(post_samples, axis=0)
             return Ntot_samples
+    
+    
+    def get_posterior_sample(self):
+        ''' Return one sample from the posterior.
+        Can only be used for the input mode 'gaussian-log10'.
+        '''
+        
+        if self.input_mode == 'gaussian-log10':
+            if self.cov_log10_cholesky is None:
+                self.cov_log10_cholesky = np.linalg.cholesky(self.post_cov_log10[self.sl, self.sl])
+            
+            return 10**(self.post_mean_log10[self.sl] + self.cov_log10_cholesky @ self.rng.normal(
+                loc=0.0, scale=1.0, size=self.post_mean_log10[self.sl].shape[0]
+                ))
+        
+        else:
+            raise ValueError("Posterior samples for input_mode=='samples' are found in " +
+                             "result.samples")
 
 
 class InversionDataset:
@@ -236,8 +278,6 @@ class InversionDataset:
         return posterior_means, CI_lower, CI_upper
     
     
-    def get_total_counts(self):
-        """
-        Returns list of total particle count statistics for all results.
-        """
-        return [r.compute_total_particle_count() for r in self.results if r is not None]
+    def set_reporting_range(self, reporting_range : str):
+        for i in range(len(self.results)):
+            self.results[i].set_reporting_range(reporting_range)

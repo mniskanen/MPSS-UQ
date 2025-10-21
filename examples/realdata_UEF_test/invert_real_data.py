@@ -17,8 +17,8 @@ from tqdm import tqdm
 from MPSS_UQ.measurement_data import MeasurementDataset, measurement_loader
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer, lpm_to_m3s
 from MPSS_UQ.inversion import invert_psd, smoothness_prior
-from MPSS_UQ.inversion_results import InversionDataset
-from MPSS_UQ.plotfunctions import plot_posterior_summary, plot_Ntot_histogram
+from MPSS_UQ.inversion_results import InversionDataset, highest_density_interval
+from MPSS_UQ.plotfunctions import plot_posterior_summary, plot_Ntot_histogram, plot_datafit
 
 from read_dmps_files_labtest import load_and_process_data
 
@@ -280,3 +280,6 @@ if __name__ == '__main__':
     fig.tight_layout()
     plt.show()
 
+    
+    fig, ax = plt.subplots(1, 1, num=999, clear=True)
+    plot_datafit(ax, DMPS, dataset[idx_1].output, inv_dataset.results[idx_1])

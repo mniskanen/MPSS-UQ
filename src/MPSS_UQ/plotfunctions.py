@@ -3,7 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from MPSS_UQ.inversion_results import highest_density_interval
+from MPSS_UQ.inversion_results import highest_density_interval, InversionResult
 
 
 def plot_psd(ax, d_m, N, *args, **kwargs):
@@ -79,15 +79,82 @@ def plot_system_matrix(DMPS, num=None, title=None):
     # plt.colorbar()
 
 
-def plot_datafit(DMPS, output_measured, log10_N, ax):
-    
+def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverage=95):
     # Data prediction
-    output_predicted = DMPS.forward_model(log10_N)
-    ax.semilogx(DMPS.d_m_data * 1e9, output_measured, label='Observed output')
-    ax.semilogx(DMPS.d_m_data * 1e9, output_predicted, label='Predicted output (from inversion)')
+    rng = np.random.default_rng()
+    n_samples = 5000
+    output_predicted_samples = np.zeros((n_samples, len(output_measured)))
+    
+    rng = np.random.default_rng()
+    
+    # The forward model can only be run for the full length PSD
+    reporting_range = result.reporting_range
+    if reporting_range == 'measured':
+        result.set_reporting_range('full')
+    
+    if result.input_mode == 'samples':
+        
+        def _update_ion_props(ion_properties):
+            if DMPS.charging_model_name == 'LYF-interp':
+                DMPS.set_charger_properties(ion_properties[0], ion_properties[1])
+            elif DMPS.charging_model_name == 'LYF-interp-flux':
+                DMPS.set_charger_properties(ion_properties[0], ion_properties[1], ion_properties[2])
+        
+        sample_idxs = rng.choice(len(result.post_samples), size=n_samples, replace=False)
+        # Evaluate the posterior samples model output in order so that we minimize the number
+        # of times the charger properties need to be reset
+        sample_idxs.sort()
+        ion_properties = result.ion_property_samples[sample_idxs[0]]
+        _update_ion_props(ion_properties)
+        
+        for i, sample_idx in enumerate(sample_idxs):
+            # Check if ion properties changed, do we need to update DMPS
+            if np.any(ion_properties != result.ion_property_samples[sample_idx]):
+                ion_properties = result.ion_property_samples[sample_idx]
+                _update_ion_props(ion_properties)
+            
+            output_predicted_samples[i] = DMPS.forward_model(
+                np.log10(result.post_samples[sample_idx])
+                )
+    
+    elif result.input_mode == 'gaussian-log10':
+        for i in range(n_samples):
+            output_predicted_samples[i] = DMPS.forward_model(
+                np.log10(result.get_posterior_sample())
+                )
+    else:
+        raise ValueError('Unknown result input mode.')
+    
+    # Put the reporting range back to what it was when calling this function
+    if reporting_range == 'measured':
+        result.set_reporting_range('measured')
+    
+    # Add counting noise
+    output_predicted_samples = rng.poisson(lam=output_predicted_samples)
+        
+    output_predicted_mean = np.mean(output_predicted_samples, axis=0)
+    
+    # Highest density intervals
+    CI_lower = np.zeros(len(output_measured))
+    CI_upper = np.zeros_like(CI_lower)
+    for i in range(len(output_measured)):
+        CI_lower[i], CI_upper[i] = highest_density_interval(output_predicted_samples[:, i],
+                                                            CI_coverage / 100
+                                                            )
+    
+    ax.semilogx(DMPS.d_m_data * 1e9, output_measured, 'kx', label='Observed output')
+    ax.fill_between(DMPS.d_m_data * 1e9,
+                    CI_upper,
+                    CI_lower,
+                    alpha=0.25,
+                    facecolor='C1',
+                    label=f'{CI_coverage} % credible interval'
+                    )
+    ax.semilogx(DMPS.d_m_data * 1e9, output_predicted_mean, 'C1-',
+                label='Predicted output (from inversion)')
     ax.legend()
     ax.grid('on')
-    ax.set_title('output')
+    ax.set_title('Data fit')
     ax.set_xlabel('Selected DMA output diameter (nm)')
     ax.set_ylabel('Counts (#)')
 

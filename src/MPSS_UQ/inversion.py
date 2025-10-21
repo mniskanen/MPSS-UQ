@@ -46,22 +46,22 @@ def invert_psd(
     if marginalize_ion_mobility is False and marginalize_ion_ratio is False:
         MAP, post_cov = Laplace_approximation(DMPS, prior, measurement)
         return InversionResult(DMPS.d_m,
+                               sl_measured,
                                post_mean_log10=MAP,
                                post_cov_log10=post_cov,
-                               sl_measured=sl_measured,
                                )
     
     else:
-        posterior_samples = Laplace_approximation_marginalize(DMPS,
-                                                              prior,
-                                                              measurement,
-                                                              marginalize_ion_mobility,
-                                                              marginalize_ion_ratio,
-                                                              num_samples=num_samples,
-                                                              )
+        posterior_samples, ion_property_samples = Laplace_approximation_marginalize(
+            DMPS, prior, measurement,
+            marginalize_ion_mobility,
+            marginalize_ion_ratio,
+            num_samples=num_samples,
+            )
         return InversionResult(DMPS.d_m,
+                               sl_measured,
                                post_samples=posterior_samples,
-                               sl_measured=sl_measured,
+                               ion_property_samples=ion_property_samples,
                                )
 
 
@@ -199,12 +199,15 @@ def Laplace_approximation_marginalize(DMPS,
     and/or the ratio of positive to negative ions. Returns samples from the posterior mixture.
     
     Input:
-        DMPS - an initialized instance of the DifferentialMobilityParticleSizer class
-        prior - a dictionary with the prior specifications for the PSD
-        measurement - a dictionary with data on the measurement
-        marginalize_ion_mobility - True/False
-        marginalize_ion_ratio - True/False
-        num_samples - number of samples drawn from the posterior mixture.
+        DMPS : an initialized instance of the DifferentialMobilityParticleSizer class
+        prior : a dictionary with the prior specifications for the PSD
+        measurement : a dictionary with data on the measurement
+        marginalize_ion_mobility : True/False
+        marginalize_ion_ratio : True/False
+        num_samples : int
+            Number of samples drawn from the posterior mixture.
+        # return_ion_properties : True/False
+        #     If True, return ion properties at each posterior sample.
     
     Output:
         posterior_mixture_samples - a vector consisting of draws from the marginalized posterior
@@ -243,6 +246,7 @@ def Laplace_approximation_marginalize(DMPS,
         
     else:
         n_ion_ratios = 1
+        ion_ratio = 1
     
     n_invert = n_mobilities * n_ion_ratios
     if n_invert == 1:
@@ -253,6 +257,7 @@ def Laplace_approximation_marginalize(DMPS,
     posterior_covs_log10 = np.zeros((n_invert, n_bins, n_bins))
     log_posts = np.zeros((n_gridpoints_pos, n_gridpoints_neg)) * np.nan
     posterior_cov_Ls_log10 = np.zeros((n_invert, n_bins, n_bins)) * np.nan
+    ion_properties = np.zeros((n_invert, 3))
     
     # Starting guess for the Laplace approximation
     N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
@@ -284,6 +289,9 @@ def Laplace_approximation_marginalize(DMPS,
                 
                 # Calculate the Cholesky factor
                 posterior_cov_Ls_log10[i] = np.linalg.cholesky(posterior_covs_log10[i])
+                
+                # Store ion properties
+                ion_properties[i] = pos_ion_mobility, neg_ion_mobility, ion_ratio
                 
                 # Use the current MAP estimate as a starting guess for the next one
                 # (it _probably_ is quite close to the truth)
@@ -319,6 +327,7 @@ def Laplace_approximation_marginalize(DMPS,
     posterior_mixture_samples = np.zeros((num_samples, n_bins),
                                          dtype=np.float32
                                          )
+    ion_property_samples = np.zeros((num_samples, 3))
     start = 0
     for comp_idx, count in enumerate(counts):
         if count == 0:
@@ -330,9 +339,16 @@ def Laplace_approximation_marginalize(DMPS,
                                                             size=(n_bins, count)
                                                             )
             ).T
+        
+        # Store the ion properties of each sample
+        ion_property_samples[start:start+count] = ion_properties[comp_idx]
+        
         start += count
     
-    return posterior_mixture_samples
+    # if return_ion_properties:
+    return posterior_mixture_samples, ion_property_samples
+    # else:
+    #     return posterior_mixture_samples
 
 
 def linesearch(fn, direction, N_0, previous_best_f_value, *args):

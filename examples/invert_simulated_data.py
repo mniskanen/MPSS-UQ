@@ -9,7 +9,7 @@ from matplotlib.lines import Line2D
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
 from MPSS_UQ.inversion import invert_psd, smoothness_prior
 from MPSS_UQ.measurement_data import generate_DMPS_measurement
-from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram
+from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram, plot_datafit
 
 
 '''
@@ -224,3 +224,8 @@ fig.add_artist(line)
 
 fig.tight_layout()
 plt.show()
+
+# Plot data fit
+fig, axs = plt.subplots(2, 1, num=999, clear=True)
+plot_datafit(axs[0], DMPS_inv, measurement.output, result)
+plot_datafit(axs[1], DMPS_inv, measurement.output, result_marg)
