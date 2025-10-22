@@ -39,7 +39,9 @@ def mean_free_path_air(temperature, pressure):
 
 
 def cunningham(Kn):
-    """Compute the Cunningham slip correction factor for given Knudsen numbers Kn."""
+    """Compute the Cunningham slip correction factor for given Knudsen numbers Kn,
+    defined as Kn = 2 \lambda / d.
+    """
     return 1 + Kn * (1.257 + 0.4 * np.exp(-1.1 / Kn))
 
 
@@ -251,7 +253,7 @@ class DifferentialMobilityParticleSizer:
         b = 0.2672
         c = 0.10079
         
-        Kn = mean_free_path_air(self.temperature, self.pressure) / (self.d_m_data * 0.5)
+        Kn = 2 * mean_free_path_air(self.temperature, self.pressure) / self.d_m_data
         mu = dynamic_viscosity(self.temperature)
         Cc = cunningham(Kn)
         
@@ -274,7 +276,7 @@ class DifferentialMobilityParticleSizer:
         
         length = 1  # Length of the sampling line, #TODO as input
         
-        Kn = mean_free_path_air(self.temperature, self.pressure) / (self.d_m_data * 0.5)
+        Kn = 2 * mean_free_path_air(self.temperature, self.pressure) / self.d_m_data
         dyn_visc = dynamic_viscosity(self.temperature)
         Cc = cunningham(Kn)
         
