@@ -9,12 +9,8 @@ from scipy.integrate import quad
 from scipy.special import hyp2f1
 from dataclasses import dataclass
 
-
-
-BOLTZMANN_CONSTANT = 1.380649e-23
-ELECTRON_CHARGE = 1.60217663e-19
-VACUUM_PERMITTIVITY = 8.8541878188e-12
-AIR_RELATIVE_PERMITTIVITY = 1.00058986  # i.e., its dielectric constant
+from MPSS_UQ.aerosol import (BOLTZMANN_CONSTANT, ELECTRON_CHARGE,
+                             AIR_RELATIVE_PERMITTIVITY, VACUUM_PERMITTIVITY)
 
 
 

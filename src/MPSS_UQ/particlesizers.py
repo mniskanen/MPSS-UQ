@@ -12,37 +12,14 @@ from MPSS_UQ.chargingmodels import (LYFChargingModel,
                                     WiedensohlerChargingModel,
                                     ChargingModelWrapper,
                                     )
+from MPSS_UQ.aerosol import (particle_diffusivity,
+                             electrical_mobility,
+                             BOLTZMANN_CONSTANT,
+                             ELECTRON_CHARGE,
+                             )
 
-
-BOLTZMANN_CONSTANT = 1.380649e-23  # Boltzmann constant
-EL_CHARGE = 1.602176634e-19  # Elementary charge
 
 lpm_to_m3s = 1e-3 / 60  # Liters per minute to m3 per second conversion factor
-
-
-# TODO: move these functions somewhere sensible
-def dynamic_viscosity(temperature):
-    """ Dynamic viscosity of air given by the Sutherland formula. """
-    return 1.458e-6 * temperature**1.5 / (temperature + 110.4)
-
-
-def mean_free_path_air(temperature, pressure):
-    """ Calculate the mean free path of an air molecule for a given temperature. Assume that
-    the air molecules consist of nitrogen only.
-    """
-    
-    # Diameter of a nitrogen molecule (adjusted so that we get a mean free path of 68 nm for
-    # temperature 20 C)
-    d = 3.64e-10
-    
-    return BOLTZMANN_CONSTANT * temperature / (np.sqrt(2) * np.pi * d**2 * pressure)
-
-
-def cunningham(Kn):
-    """Compute the Cunningham slip correction factor for given Knudsen numbers Kn,
-    defined as Kn = 2 \lambda / d.
-    """
-    return 1 + Kn * (1.257 + 0.4 * np.exp(-1.1 / Kn))
 
 
 class DifferentialMobilityParticleSizer:
@@ -146,7 +123,7 @@ class DifferentialMobilityParticleSizer:
         self.pressure = pressure  # Internal pressure (Pa)
         
         # Mobilities we want to classify
-        self.Z_targets = self.compute_electrical_mobility(self.d_m_data, 1)
+        self.Z_targets = electrical_mobility(self.d_m_data, self.temperature, self.pressure, 1)
         
         self.transfer_function = self.compute_transfer_function()
         self.penetration_efficiency = self.compute_penetration_efficiency()
@@ -253,14 +230,7 @@ class DifferentialMobilityParticleSizer:
         b = 0.2672
         c = 0.10079
         
-        Kn = 2 * mean_free_path_air(self.temperature, self.pressure) / self.d_m_data
-        mu = dynamic_viscosity(self.temperature)
-        Cc = cunningham(Kn)
-        
-        # Diffusion coefficient
-        D = BOLTZMANN_CONSTANT * self.temperature / (3 * np.pi * mu * self.d_m_data) * Cc
-        
-        L_eff = 4.6
+        D = particle_diffusivity(self.d_m_data, self.temperature, self.pressure)
         
         # Particle diffusion coefficient
         tau = np.pi * D * L_eff / self.Qa
@@ -330,7 +300,7 @@ class DifferentialMobilityParticleSizer:
         voltage = self.compute_DMA_voltage(Z_target)
         
         # Peclet number
-        Pe = np.abs(charge) * EL_CHARGE * voltage / (BOLTZMANN_CONSTANT * self.temperature) \
+        Pe = np.abs(charge) * ELECTRON_CHARGE * voltage / (BOLTZMANN_CONSTANT * self.temperature) \
             * (1 - self.R1 / self.R2) / np.log(self.R2 / self.R1)
         
         sigma = np.sqrt(self.G * Z_ratio / Pe)
@@ -407,7 +377,7 @@ class DifferentialMobilityParticleSizer:
             if compute_using == 'bin centerpoint':
                 # Use the center-of-bin value for the transfer function
                 # Mobilities of the particles we model
-                Z_modelled = self.compute_electrical_mobility(self.d_m, charge)
+                Z_modelled = electrical_mobility(self.d_m, self.temperature, self.pressure, charge)
                 for z_idx, Z_target in enumerate(self.Z_targets):
                     
                     transfer_function[c_idx, z_idx] += (
@@ -417,7 +387,8 @@ class DifferentialMobilityParticleSizer:
             
             elif compute_using == 'trapezoidal rule':
                 # Calculate the integral over the bin using the trapezoidal rule
-                Z_modelled = self.compute_electrical_mobility(d_m_intpts, charge)
+                Z_modelled = electrical_mobility(
+                    d_m_intpts, self.temperature, self.pressure, charge)
                 for z_idx, Z_target in enumerate(self.Z_targets):
                     
                     tf_vals = self._tf_element_diffusive(Z_modelled, Z_target, charge)
@@ -435,7 +406,8 @@ class DifferentialMobilityParticleSizer:
             
             elif compute_using == 'Gaussian quadrature':
                 # Calculate the integral over the bin using Gaussian quadrature
-                Z_modelled = self.compute_electrical_mobility(d_m_gauss_pts, charge)
+                Z_modelled = electrical_mobility(
+                    d_m_gauss_pts, self.temperature, self.pressure, charge)
                 for z_idx, Z_target in enumerate(self.Z_targets):
                     
                     tf_vals = self._tf_element_diffusive(Z_modelled, Z_target, charge)
@@ -477,17 +449,6 @@ class DifferentialMobilityParticleSizer:
         
         return self.charging_model(*args)
     
-    
-    def compute_electrical_mobility(self, d_m, particle_charge):
-        ''' Compute electrical mobility for spherical particles from the particle mobility
-        diameter.
-        particle_charge is given as the number of elementary charges on the particle.
-        '''
-        
-        Kn = 2 * mean_free_path_air(self.temperature, self.pressure) / d_m  # Knudsen number
-        eta = dynamic_viscosity(self.temperature)
-        
-        return np.abs(particle_charge) * EL_CHARGE * cunningham(Kn) / (3 * np.pi * eta * d_m)
     
     def compute_DMA_voltage(self, Z):
         ''' Compute the required voltages differences between the inner and outer DMA electrodes 
