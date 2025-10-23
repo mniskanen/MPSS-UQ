@@ -56,6 +56,23 @@ class DifferentialMobilityParticleSizer:
         self.R1 = properties['R1']  # Inner radius of the DMA (m)
         self.R2 = properties['R2']  # Outer radius of the DMA (m)
         self.length = properties['L']  # Length of the DMA (m)
+        self.L_eff = properties['L_eff']  # Effective DMA length for loss calculations (m)
+        
+        # Inlet sampling line        
+        inlets = properties['inlets']
+        if inlets is None:
+            self.inlet_flows   = np.array([], dtype=float)
+            self.inlet_lengths = np.array([], dtype=float)
+        else:
+            try:
+                inlets = np.array(inlets, dtype=float)
+                if inlets.ndim != 2 or inlets.shape[1] != 2:
+                    raise ValueError("`inlets` must be a list of [flow, length] pairs.")
+            except:
+                raise ValueError("Invalid `inlets` format. Make sure the number of lengths and " + 
+                                 "flow rates is the same.")
+            self.inlet_lengths = inlets[:, 0]
+            self.inlet_flows = inlets[:, 1]
         
         # Sign of center electrode voltage compared to the outer electrode.
         self.center_voltage_sign = properties['center_voltage_sign']
@@ -127,7 +144,7 @@ class DifferentialMobilityParticleSizer:
         
         self.transfer_function = self.compute_transfer_function()
         self.penetration_efficiency = self.compute_penetration_efficiency()
-        self.sampling_line_loss = self.calclineloss()
+        self.sampling_line_loss = self.compute_sampling_line_loss()
         
         # Only update the system matrix if the charging probability has been computed
         if self.charger_conditions_set:
@@ -233,7 +250,7 @@ class DifferentialMobilityParticleSizer:
         D = particle_diffusivity(self.d_m_data, self.temperature, self.pressure)
         
         # Particle diffusion coefficient
-        tau = np.pi * D * L_eff / self.Qa
+        tau = np.pi * D * self.L_eff / self.Qa
         
         # Sherwood number for laminar flow
         Sh = a + b / (tau + c * tau**(1 / 3))
@@ -241,34 +258,28 @@ class DifferentialMobilityParticleSizer:
         return np.exp(-tau * Sh)
     
     
-    def calclineloss(self):
+    def compute_sampling_line_loss(self):
         ''' Calculate sampling line losses. '''
         
-        length = 1  # Length of the sampling line, #TODO as input
+        if self.inlet_lengths is None or len(self.inlet_lengths) == 0:
+            return np.ones_like(self.d_m_data, dtype=float)
+        if np.any(np.asarray(self.inlet_lengths) <= 0):
+            raise ValueError("All inlet lengths must be > 0.")
         
-        Kn = 2 * mean_free_path_air(self.temperature, self.pressure) / self.d_m_data
-        dyn_visc = dynamic_viscosity(self.temperature)
-        Cc = cunningham(Kn)
+        D = particle_diffusivity(self.d_m_data, self.temperature, self.pressure)
         
-        # Diffusion coefficient
-        D = BOLTZMANN_CONSTANT * self.temperature / (3 * np.pi * dyn_visc * self.d_m_data) * Cc
+        mu = (self.inlet_lengths[:, None] * D[None, :]) / self.Qa
         
-        # Qa on valmiiksi yksikössä m3/s
-        # Convert flow from L/min to m³/s and compute mu
-        mu = D * length / self.Qa
+        P_small = 1.0 - 5.5 * np.power(mu, 2.0/3.0) + 3.77 * mu
+        P_large = (0.819  * np.exp(-11.5 * mu)
+                 + 0.0975 * np.exp(-70.1 * mu)
+                 + 0.0325 * np.exp(-179  * mu))
+        P = np.where(mu < 0.009, P_small, P_large)
+    
+        # Total penetration across all parts
+        P_total = P.prod(axis=0)
         
-        # Compute pressure loss factor P
-        P = np.zeros_like(mu)
-        # if mu < 0.009:
-        P[mu < 0.009] = 1 - 5.5 * mu[mu < 0.009]**(2/3) + 3.77 * mu[mu < 0.009]
-        # else:
-        P[mu >= 0.009] = (
-            0.819 * np.exp(-11.5 * mu[mu >= 0.009]) +
-            0.0975 * np.exp(-70.1 * mu[mu >= 0.009]) +
-            0.0325 * np.exp(-179 * mu[mu >= 0.009])
-        )
-        
-        return P
+        return P_total
     
     
     def _tf_eps(self, y):

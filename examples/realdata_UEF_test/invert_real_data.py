@@ -34,7 +34,7 @@ if __name__ == '__main__':
     # Load a configuration file to set up the DMPS model
     # =============================================================================
     
-    with open("DMPS_properties.yaml", "r") as f:
+    with open("../DMPS_properties.yaml", "r") as f:
         DMPS_prop = yaml.safe_load(f)
     DMPS_prop = DMPS_prop['UEF-A20']
     
