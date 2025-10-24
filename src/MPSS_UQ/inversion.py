@@ -206,11 +206,12 @@ def Laplace_approximation_marginalize(DMPS,
         marginalize_ion_ratio : True/False
         num_samples : int
             Number of samples drawn from the posterior mixture.
-        # return_ion_properties : True/False
-        #     If True, return ion properties at each posterior sample.
     
     Output:
-        posterior_mixture_samples - a vector consisting of draws from the marginalized posterior
+        posterior_mixture_samples : A vector consisting of draws from the marginalized posterior.
+        ion_property_samples : array of floats,
+            Values of the positive ion mobility, negative ion mobility, and ion ratio at each
+            post_sample.
     '''
     
     # Set seed for reproducibility
@@ -345,10 +346,7 @@ def Laplace_approximation_marginalize(DMPS,
         
         start += count
     
-    # if return_ion_properties:
     return posterior_mixture_samples, ion_property_samples
-    # else:
-    #     return posterior_mixture_samples
 
 
 def linesearch(fn, direction, N_0, previous_best_f_value, *args):

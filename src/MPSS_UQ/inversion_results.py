@@ -130,7 +130,7 @@ class InversionResult:
             self.cov_log10_cholesky = None
     
     
-    def _postprocess_resuts_from_covariance_log10(self, CI):
+    def _postprocess_results_from_covariance_log10(self, CI):
         
         # Calculate the requested credible interval estimates
         sigma = np.sqrt(np.diag(self.post_cov_log10[self.sl, self.sl]))
@@ -142,7 +142,7 @@ class InversionResult:
         return 10**self.post_mean_log10[self.sl], CI_lower, CI_upper
     
     
-    def _postprocess_resuts_from_samples(self, CI):
+    def _postprocess_results_from_samples(self, CI):
         
         post_mean = np.mean(self.post_samples[:, self.sl], axis=0)
         
@@ -174,9 +174,9 @@ class InversionResult:
             raise ValueError('Invalid value for posterior coverage. It should be in (0, 100).')
         
         if self.input_mode == 'gaussian-log10':
-            return self._postprocess_resuts_from_covariance_log10(coverage)
+            return self._postprocess_results_from_covariance_log10(coverage)
         elif self.input_mode == 'samples':
-            return self._postprocess_resuts_from_samples(coverage)
+            return self._postprocess_results_from_samples(coverage)
     
     
     def Ntot_samples(self, n_samples=None):
@@ -205,9 +205,11 @@ class InversionResult:
                 n_samples = 5000
             
             # We have to sample because of the nonlinear transformation
-            L = np.linalg.cholesky(self.post_cov_log10[self.sl, self.sl])
-            post_samples_log10 = self.post_mean_log10[self.sl, None] + L @ self.rng.normal(
-                loc=0.0, scale=1.0, size=(L.shape[0], n_samples)
+            if self.cov_log10_cholesky is None:
+                self.cov_log10_cholesky = np.linalg.cholesky(self.post_cov_log10[self.sl, self.sl])
+            post_samples_log10 = self.post_mean_log10[self.sl, None] \
+                + self.cov_log10_cholesky @ self.rng.normal(
+                loc=0.0, scale=1.0, size=(self.d_m.shape[0], n_samples)
                 )
             # Do 10^samples, but using np.exp (faster)
             post_samples = np.exp(post_samples_log10 * np.log(10))
