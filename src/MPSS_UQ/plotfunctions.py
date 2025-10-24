@@ -98,7 +98,8 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
             if DMPS.charging_model_name == 'LYF-interp':
                 DMPS.set_charger_properties(ion_properties[0], ion_properties[1])
             elif DMPS.charging_model_name == 'LYF-interp-flux':
-                DMPS.set_charger_properties(ion_properties[0], ion_properties[1], ion_properties[2])
+                DMPS.set_charger_properties(ion_properties[0], ion_properties[1],
+                                            ion_properties[2])
         
         sample_idxs = rng.choice(len(result.post_samples), size=n_samples, replace=False)
         # Evaluate the posterior samples model output in order so that we minimize the number
@@ -130,15 +131,19 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
         result.set_reporting_range('measured')
     
     # Add counting noise
-    output_predicted_samples = rng.poisson(lam=output_predicted_samples)
+    output_predicted_samples_noisy = rng.poisson(lam=output_predicted_samples).astype(np.float64)
+    # Add additive noise (electronic/environmental)
+    noise_std = 2 + 0.01 * output_predicted_samples
+    output_predicted_samples_noisy += noise_std * rng.normal(loc=0.0, scale=1.0,
+                                                             size=output_predicted_samples.shape)
         
-    output_predicted_mean = np.mean(output_predicted_samples, axis=0)
+    output_predicted_mean = np.mean(output_predicted_samples_noisy, axis=0)
     
     # Highest density intervals
     CI_lower = np.zeros(len(output_measured))
     CI_upper = np.zeros_like(CI_lower)
     for i in range(len(output_measured)):
-        CI_lower[i], CI_upper[i] = highest_density_interval(output_predicted_samples[:, i],
+        CI_lower[i], CI_upper[i] = highest_density_interval(output_predicted_samples_noisy[:, i],
                                                             CI_coverage / 100
                                                             )
     
