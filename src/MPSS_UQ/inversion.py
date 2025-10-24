@@ -12,7 +12,15 @@ from MPSS_UQ.inversion_results import InversionResult
 # inversion methods a higher priority
 import psutil, os
 p = psutil.Process(os.getpid())
-p.nice(psutil.HIGH_PRIORITY_CLASS)
+try:
+    p.nice(psutil.HIGH_PRIORITY_CLASS)  # Windows constant
+except AttributeError:
+    # psutil.HIGH_PRIORITY_CLASS doesn't exist on non-Windows
+    try:
+        p.nice(-10)  # Linux/macOS: lower niceness = higher priority
+    except Exception:
+        pass  # silently ignore if not permitted
+
 
 
 def invert_psd(
