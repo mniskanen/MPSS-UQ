@@ -362,9 +362,6 @@ def linesearch(fn, direction, N_0, previous_best_f_value, *args):
     stepl = 1
     reduce = 0.7
     dN_old = stepl * direction
-    while any((N_0 + dN_old) > 10):
-        stepl *= reduce
-        dN_old = stepl * direction
     post_old = -fn(N_0 + dN_old, *args)
     
     found_best_value = False
