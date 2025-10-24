@@ -5,6 +5,7 @@ import importlib.resources as resources
 import warnings
 
 from scipy.special import erf
+from functools import lru_cache
 
 from MPSS_UQ.chargingmodels import (LYFChargingModel,
                                     LYFInterpolator,
@@ -122,6 +123,8 @@ class DifferentialMobilityParticleSizer:
             
         else:
             self.charger_conditions_set = False
+        
+        self._calc_transfer_func_cacheable.cache_clear()
     
     
     def __str__(self):
@@ -136,13 +139,19 @@ class DifferentialMobilityParticleSizer:
         ''' Set the operating temperature and pressure, then update all parts of the MPSS these
         values affect. Finally assemble the updated system matrix. '''
         
+        # First quantize inputs (for LRU caching)
+        
+        # Round to nearest 2 K
+        temperature_bin = int(round(temperature / 2.0) * 2)
+        
+        # Round to nearest 25 Pa
+        pressure_bin = int(round(pressure / 25.0) * 25)
+        
         self.temperature = temperature  # Internal temperature (K)
         self.pressure = pressure  # Internal pressure (Pa)
         
-        # Mobilities we want to classify
-        self.Z_targets = electrical_mobility(self.d_m_data, self.temperature, self.pressure, 1)
+        self.transfer_function = self._calc_transfer_func_cacheable(temperature_bin, pressure_bin)
         
-        self.transfer_function = self.compute_transfer_function()
         self.penetration_efficiency = self.compute_penetration_efficiency()
         self.sampling_line_loss = self.compute_sampling_line_loss()
         
@@ -151,6 +160,22 @@ class DifferentialMobilityParticleSizer:
             self._update_system_matrix()
         
         self.operating_conditions_set = True
+    
+    
+    @lru_cache(maxsize=128)
+    def _calc_transfer_func_cacheable(self, temperature, pressure):
+        ''' A function to calculate the DMA transfer function in a cacheable way to use
+        LRU caching for speedups when updating environmental conditions.
+        Chech the cache stats with DMPS._calc_transfer_func_cacheable.cache_info()
+        '''
+        
+        
+        # Mobilities we want to classify
+        Z_targets = electrical_mobility(self.d_m_data, temperature, pressure, 1)
+        
+        transfer_function = self.compute_transfer_function(Z_targets, temperature, pressure)
+        
+        return transfer_function
     
     
     def set_charger_properties(self, *args):
@@ -302,7 +327,7 @@ class DifferentialMobilityParticleSizer:
         return TF
     
     
-    def _tf_element_diffusive(self, Z, Z_target, charge):
+    def _tf_element_diffusive(self, Z, Z_target, charge, temperature):
         ''' Compute a single element of the DMA transfer function with diffusion.
         Computed after Stolzenburg 1988 'An ultrafine aerosol size distribution system'.
         '''
@@ -311,7 +336,7 @@ class DifferentialMobilityParticleSizer:
         voltage = self.compute_DMA_voltage(Z_target)
         
         # Peclet number
-        Pe = np.abs(charge) * ELECTRON_CHARGE * voltage / (BOLTZMANN_CONSTANT * self.temperature) \
+        Pe = np.abs(charge) * ELECTRON_CHARGE * voltage / (BOLTZMANN_CONSTANT * temperature) \
             * (1 - self.R1 / self.R2) / np.log(self.R2 / self.R1)
         
         sigma = np.sqrt(self.G * Z_ratio / Pe)
@@ -329,7 +354,7 @@ class DifferentialMobilityParticleSizer:
         return TF
     
     
-    def compute_transfer_function(self):
+    def compute_transfer_function(self, Z_targets, temperature, pressure):
         ''' Compute the DMA transfer function, i.e., the probability that a particle of mobility Z
         will be transmitted from the aerosol flow to the classified aerosol flow when classifying
         mobility Z_target.
@@ -388,21 +413,21 @@ class DifferentialMobilityParticleSizer:
             if compute_using == 'bin centerpoint':
                 # Use the center-of-bin value for the transfer function
                 # Mobilities of the particles we model
-                Z_modelled = electrical_mobility(self.d_m, self.temperature, self.pressure, charge)
-                for z_idx, Z_target in enumerate(self.Z_targets):
+                Z_modelled = electrical_mobility(self.d_m, temperature, pressure, charge)
+                for z_idx, Z_target in enumerate(Z_targets):
                     
                     transfer_function[c_idx, z_idx] += (
                         # self._tf_element_nondiffusive(Z_modelled, Z_target)
-                        self._tf_element_diffusive(Z_modelled, Z_target, charge)
+                        self._tf_element_diffusive(Z_modelled, Z_target, charge, temperature)
                         ) #/ binwidth
             
             elif compute_using == 'trapezoidal rule':
                 # Calculate the integral over the bin using the trapezoidal rule
                 Z_modelled = electrical_mobility(
-                    d_m_intpts, self.temperature, self.pressure, charge)
-                for z_idx, Z_target in enumerate(self.Z_targets):
+                    d_m_intpts, temperature, pressure, charge)
+                for z_idx, Z_target in enumerate(Z_targets):
                     
-                    tf_vals = self._tf_element_diffusive(Z_modelled, Z_target, charge)
+                    tf_vals = self._tf_element_diffusive(Z_modelled, Z_target, charge, temperature)
                     
                     for d_m_idx, d_m_modelled in enumerate(self.d_m):
                         
@@ -418,10 +443,10 @@ class DifferentialMobilityParticleSizer:
             elif compute_using == 'Gaussian quadrature':
                 # Calculate the integral over the bin using Gaussian quadrature
                 Z_modelled = electrical_mobility(
-                    d_m_gauss_pts, self.temperature, self.pressure, charge)
-                for z_idx, Z_target in enumerate(self.Z_targets):
+                    d_m_gauss_pts, temperature, pressure, charge)
+                for z_idx, Z_target in enumerate(Z_targets):
                     
-                    tf_vals = self._tf_element_diffusive(Z_modelled, Z_target, charge)
+                    tf_vals = self._tf_element_diffusive(Z_modelled, Z_target, charge, temperature)
                     tf_integral = dx_diff * np.sum(tf_vals * weights, axis=1) / binwidth
                     transfer_function[c_idx, z_idx] += tf_integral
         

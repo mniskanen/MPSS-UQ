@@ -141,14 +141,10 @@ if __name__ == '__main__':
     else:
         
         for idx, measurement in enumerate(tqdm(measurement_loader(dataset), total=len(dataset))):
-            # DMPS.set_operating_conditions(measurement.temperature,
-            #                                   measurement.pressure * 1e2
-            #                                   )
-            
+            DMPS.set_operating_conditions(measurement.temperature, measurement.pressure * 1e2)
             result = invert_psd(DMPS, measurement, prior,
                                 marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY
                                 )
-            
             inv_dataset.assign_result(idx, result)
     
     
