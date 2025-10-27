@@ -115,6 +115,7 @@ if __name__ == '__main__':
         # Wrapper functions to get the iteration number for parallel execution
         def run_inversion(args):
             idx, measurement = args
+            DMPS.set_operating_conditions(measurement.temperature, measurement.pressure * 1e2)
             result = invert_psd(DMPS, measurement, prior,
                                 marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY,
                                 )
@@ -122,14 +123,18 @@ if __name__ == '__main__':
         
         # Set the number of processes
         n_cpus = psutil.cpu_count(logical=False)
-        n_jobs = n_cpus - 1  # Leave at least one thread free for other use
+        n_jobs = max(1, n_cpus - 1)  # Leave at least one thread free for other use
         
         # Collect all measurements into a list
         all_measurements = [dataset[i] for i in range(len(dataset))]
 
         # Prepare all measurements for parallel execution
         args = list(enumerate(all_measurements))
-        
+
+        # Important: the 'loky' backend makes copies (via pickling) of the objects each worker
+        # needs, so each process receives its own copy of, for example, the DMPS and therefore
+        # it is safe to mutate the DMPS inside 'run_inversion'. With a different backend this
+        # may not be the case.
         results = Parallel(n_jobs=n_jobs, backend='loky')(
             delayed(run_inversion)(args) for args in tqdm(args)
             )
