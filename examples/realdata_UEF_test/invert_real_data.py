@@ -129,7 +129,17 @@ if __name__ == '__main__':
         all_measurements = [dataset[i] for i in range(len(dataset))]
 
         # Prepare all measurements for parallel execution
-        args = list(enumerate(all_measurements))
+        # args = list(enumerate(all_measurements))
+        
+        # Sorting the measurements by temperature and pressure improves cache locality
+        # when updating operating conditions in the DMPS model. This can speed up inversion
+        # due to reuse of cached results (see the @lru_cache usage in particlesizers.py).
+        # The rounding ensures that measurements with similar conditions are grouped together.
+        args = sorted(
+            enumerate(all_measurements),
+            key=lambda x: (int(round(x[1].temperature / 2.0) * 2),
+                           int(round(x[1].pressure * 1e2 / 25.0) * 25))
+            )
 
         # Important: the 'loky' backend makes copies (via pickling) of the objects each worker
         # needs, so each process receives its own copy of, for example, the DMPS and therefore
