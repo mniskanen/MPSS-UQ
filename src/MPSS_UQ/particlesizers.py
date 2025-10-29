@@ -43,6 +43,8 @@ class DifferentialMobilityParticleSizer:
             self.d_m = _auto_inversion_grid(self.d_m_data, n_bins=n_bins)
         elif type(inversion_grid) == np.ndarray:
             self.d_m = inversion_grid
+        else:
+            raise ValueError("inversion_grid must be 'auto' or a 1D numpy array.")
         
         self.Qsh = properties['Qsh']  # Sheath flow (liters per minute)
         self.Qe = properties['Qe']  # Exhaust flow (lpm)
@@ -182,12 +184,12 @@ class DifferentialMobilityParticleSizer:
         ''' Calculate charging probability using input properties, and assemble
         the updated system matrix.
         Required inputs depend on the chosen charging model:
-            
-        LYF-direct or LYF-interp-flux:
-            args = (positive_ion_mobility, negative_ion_mobility, ion_ratio)
         
         LYF-interp:
             args = (positive_ion_mobility, negative_ion_mobility)
+            
+        LYF-direct or LYF-interp-flux:
+            args = (positive_ion_mobility, negative_ion_mobility, ion_ratio)
         
         ion_ratio is the ratio of positive to negative ions, assumed equal to 1 in LYF-interp.
         '''

@@ -72,7 +72,7 @@ def plot_system_matrix(DMPS, num=None, title=None):
     plt.gca().invert_yaxis()
     plt.title(f'DMPS system matrix{title}')
     plt.xlabel('Modelled particle diameters (nm)')
-    plt.ylabel('Mmeasured particle diameters (nm)')
+    plt.ylabel('Measured particle diameters (nm)')
     plt.xscale('log')
     plt.yscale('log')
     plt.axis('equal')
@@ -156,7 +156,7 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
                     label=f'{CI_coverage} % credible interval'
                     )
     ax.semilogx(DMPS.d_m_data * 1e9, output_predicted_mean, 'C1-',
-                label='Predicted output (from inversion)')
+                label='Mean predicted output')
     ax.legend()
     ax.grid('on')
     ax.set_title('Data fit')

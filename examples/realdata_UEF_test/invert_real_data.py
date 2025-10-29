@@ -181,7 +181,7 @@ if __name__ == '__main__':
     
     Z = means.T / binwidth
     
-    plt_N_min = 10**0#np.min(Z)
+    plt_N_min = np.min(Z)
     plt_N_max = np.max(Z)
     im = axs[0].pcolormesh(*np.meshgrid(datetimes, d_m * 1e9), Z,
                        norm=colors.LogNorm(vmin=plt_N_min, vmax=plt_N_max),
@@ -194,14 +194,14 @@ if __name__ == '__main__':
     axs[0].set_ylabel('Particle diameter (nm)')
     axs[0].set_xlabel('Time')
     axs[0].set_title('Inverted particle size distribution of a DMPS measurement')
-                
+    
     cbar = fig.colorbar(im, ax=axs[0],
                          label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$')
     
     # Plot uncertainties
     CI_width = CI_upper - CI_lower
     plotval = CI_width.T / binwidth
-    plt_CIw_min = np.min(plotval)  #10**-1.5
+    plt_CIw_min = np.min(plotval)
     plt_CIw_max = np.max(plotval)
     im = axs[1].pcolormesh(*np.meshgrid(datetimes, d_m * 1e9), plotval,
                        norm=colors.LogNorm(vmin=plt_CIw_min, vmax=plt_CIw_max),
@@ -216,7 +216,7 @@ if __name__ == '__main__':
     axs[1].set_title(f'Estimate uncertainty (width of the {CI_coverage} % credible intervals)')
                 
     cbar = fig.colorbar(im, ax=axs[1],
-                         label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$')
+                        label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$')
     
     fig.tight_layout()
     plt.show()
