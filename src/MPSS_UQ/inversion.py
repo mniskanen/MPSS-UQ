@@ -26,7 +26,7 @@ except AttributeError:
 def invert_psd(
         DMPS,         # DMPS or SMPS
         measurement,  # Measurement
-        prior=None,   # If None, builds a default smoothness prior from DMPS.d_m TODO
+        prior=None,   # If None, builds a default smoothness prior
         marginalize_ion_mobility=False,
         marginalize_ion_ratio=False,
         num_samples=5000,
@@ -50,6 +50,9 @@ def invert_psd(
     i_stop = min(len(DMPS.d_m), i_stop + 1)
         
     sl_measured = slice(i_start, i_stop)
+    
+    if prior is None:
+        prior = smoothness_prior(DMPS.d_m, 0, 0.5, 1.5)
     
     if marginalize_ion_mobility is False and marginalize_ion_ratio is False:
         MAP, post_cov = Laplace_approximation(DMPS, prior, measurement)
