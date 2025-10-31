@@ -8,7 +8,7 @@ from matplotlib.lines import Line2D
 
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
 from MPSS_UQ.inversion import invert_psd, smoothness_prior
-from MPSS_UQ.measurement_data import generate_DMPS_measurement
+from MPSS_UQ.measurement_data import generate_DMPS_measurement, compute_true_Ntot_in_range
 from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram, plot_datafit
 
 
@@ -33,7 +33,7 @@ with open("DMPS_properties.yaml", "r") as f:
 DMPS_prop = DMPS_prop['UEF-A20']
 
 # Choose mobility diameters the DMPS measures (i.e. the output channels)
-DMPS_prop['d_m_data'] = np.geomspace(6e-9, 800e-9, num=30) # d_min, d_max, num_bins
+DMPS_prop['d_m_data'] = np.geomspace(10e-9, 800e-9, num=30) # d_min, d_max, num_bins
 
 
 # To use a custom form for the CPC counting efficiency, specify it here and add it to the
@@ -46,7 +46,7 @@ DMPS_prop['d_m_data'] = np.geomspace(6e-9, 800e-9, num=30) # d_min, d_max, num_b
 
 # DMPS_prop['custom_CPC_count_eff_function'] = custom_CPC_counting_efficiency
 
-    
+
 
 # =============================================================================
 # Step 2: Generate synthetic data
@@ -63,8 +63,7 @@ measurement = generate_DMPS_measurement(DMPS_prop.copy(), scenario='Urban')
 # =============================================================================
 
 # Optionally specify the number of inversion bins
-n_inversion_bins = None
-
+n_inversion_bins = 60
 
 # Set up the Gaussian smoothness prior. The values are given in log10-space.
 # The values needed to fully specify the prior are the expected (i.e. mean) value,
@@ -87,12 +86,9 @@ DMPS_prop['charging_model'] = 'LYF-interp'
 DMPS_prop['max_charge'] = 8
 
 # Create the DMPS object used in the inversion
-DMPS_inv = DifferentialMobilityParticleSizer(DMPS_prop,
-                                             n_bins=n_inversion_bins)
+DMPS_inv = DifferentialMobilityParticleSizer(DMPS_prop, n_bins=n_inversion_bins)
 
-DMPS_inv.set_operating_conditions(measurement.temperature,
-                                  measurement.pressure
-                                  )
+DMPS_inv.set_operating_conditions(measurement.temperature, measurement.pressure)
 DMPS_inv.set_charger_properties(1.40e-4, 1.90e-4)
 
 # Create the prior
@@ -116,13 +112,17 @@ DMPS_properties_marg = DMPS_prop.copy()
 # for example the LYF-interp model
 DMPS_properties_marg['charging_model'] = 'LYF-interp'
 
-DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg,
-                                              n_bins=n_inversion_bins)
+DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg, n_bins=n_inversion_bins)
 
 DMPS_marg.set_operating_conditions(measurement.temperature,
                                    measurement.pressure
                                    )
 
+prior = smoothness_prior(DMPS_marg.d_m,
+                         expected_value,
+                         correlation_length,
+                         log_standard_deviation
+                         )
 # Marginalize over charger ion mobilities
 result_marg = invert_psd(DMPS_marg,
                          measurement,
@@ -138,10 +138,6 @@ result_marg = invert_psd(DMPS_marg,
 # =============================================================================
 
 CI_coverage = 95
-
-# Set these to plot the full inverted range:
-# result.set_reporting_range('full')
-# result_marg.set_reporting_range('full')
 
 # To return the estimate mean value and lower and upper limits of the credible intervals, do:
 # mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
@@ -160,7 +156,7 @@ axs = [
 fig.suptitle('True and estimated PSDs')
 
 plot_posterior_summary(axs[0], result, CI_coverage)
-plot_psd(axs[0], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
+plot_psd(axs[0], measurement.d_m_true, measurement.N_true, color='k', label='Truth')
 axs[0].set_yscale('linear')
 axs[0].set_xlim([result.d_m[0] * 1e9, result.d_m[-1] * 1e9])
 axs[0].grid('on')
@@ -169,7 +165,7 @@ axs[0].set_title('a) PSD estimate, charging uncertainty not considered', loc='le
 
 
 plot_posterior_summary(axs[2], result_marg, CI_coverage)
-plot_psd(axs[2], measurement.d_m_truth, measurement.N_true, color='k', label='Truth')
+plot_psd(axs[2], measurement.d_m_true, measurement.N_true, color='k', label='Truth')
 axs[2].set_yscale('linear')
 axs[2].set_xlim([result_marg.d_m[0] * 1e9, result_marg.d_m[-1] * 1e9])
 axs[2].grid('on')
@@ -185,31 +181,7 @@ y_max = np.max((y0_max, y1_max))
 axs[0].set_ylim([y_min, y_max])
 axs[2].set_ylim([y_min, y_max])
 
-
-# Calculate the true Ntot but only for sizes we consider in the inversion.
-# To compare them accurately, we need to consider the bin widths. Assuming here that
-# the widths of the data generating bins are smaller than that of the inversion bins.
-binwidth_inv_log10 = np.log10(result.d_m[1]) - np.log10(result.d_m[0])
-binwidth_fwd_log10 = np.log10(measurement.d_m_truth[1]) - np.log10(measurement.d_m_truth[0])
-inv_edge_small = 10**(np.log10(result.d_m[0]) - 0.5 * binwidth_inv_log10)
-inv_edge_large = 10**(np.log10(result.d_m[-1]) + 0.5 * binwidth_inv_log10)
-fwd_edges = 10**(np.concatenate((np.log10(measurement.d_m_truth) - 0.5 * binwidth_fwd_log10,
-                                [np.log10(measurement.d_m_truth[-1]) + 0.5 * binwidth_fwd_log10]))
-                 )
-# These indexes will refer to the bin centerpoints, and hence
-# left edge of bin k = fwd_edges[k]
-# right edge of bin k = fwd_edges[k+1]
-idx1 = np.where(fwd_edges >= inv_edge_small)[0][0]
-idx2 = np.where(fwd_edges <= inv_edge_large)[0][-1] - 1  # Take the right side edge of previous bin
-Ntot_true = np.sum(measurement.N_true[idx1 : idx2 + 1])
-# Include possible partial contributions from below the first and above the last bin
-if fwd_edges[idx1] > inv_edge_small:
-    fraction = (fwd_edges[idx1] - inv_edge_small) / (fwd_edges[idx1] - fwd_edges[idx1 - 1])
-    Ntot_true += fraction * measurement.N_true[idx1 - 1]
-if fwd_edges[idx2 + 1] < inv_edge_large:
-    fraction = (inv_edge_large - fwd_edges[idx2 + 1]) / (fwd_edges[idx2 + 2] - fwd_edges[idx2 + 1])
-    Ntot_true += fraction * measurement.N_true[idx2 + 1]
-
+Ntot_true = compute_true_Ntot_in_range(measurement, result.d_m)
 Ntot_samples = result.Ntot_samples()
 Ntot_samples_marg = result_marg.Ntot_samples()
 xlimits = (min(np.min(Ntot_samples), np.min(Ntot_samples_marg)),
@@ -228,4 +200,6 @@ plt.show()
 # Plot data fit
 fig, axs = plt.subplots(2, 1, num=999, clear=True)
 plot_datafit(axs[0], DMPS_inv, measurement.output, result)
-plot_datafit(axs[1], DMPS_inv, measurement.output, result_marg)
+plot_datafit(axs[1], DMPS_marg, measurement.output, result_marg)
+axs[0].set_title('Data fit, no marginalization')
+axs[1].set_title('Data fit, marginalized')
