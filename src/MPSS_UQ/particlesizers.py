@@ -562,6 +562,22 @@ def _auto_inversion_grid(d_m_data,
     grid d_m_data by extending the range on both sides by a fixed number of
     decades. The inversion grid is clipped to [min_d_m, max_d_m].
     
+    The upper bound for the inversion size range should be at least as high as the smallest
+    of these two:
+      1) Largest size bin for which the system (instrument) matrix is sensitive for.
+         This should account for multiply charged particles, if modelled, such that if the
+         largest size we set the instrument to measure is let's say 500 nm, we can still
+         see in the largest channel doubly charged particles of size 1000 nm and 4 times
+         charged particles of size 2000 nm. If we model up to 4 charges the instrument matrix
+         is then sensitive to 2000 nm + half the transfer function width.
+      2) Largest (singly charged) particles we expect to have in the measured aerosol.
+         This could for example be the size above which an inertial impactor in the sampling
+         inlet removes all particles.
+    In practice, it is almost always safest to set the largest inversion bin size to the max
+    size the charging interpolators work for (which is rather arbitrarily chosen to be 2500 nm
+    at the moment). Sometimes the max size could be a bit smaller but it wouldn't bring much
+    computational benefit.
+    
     Parameters
     ----------
     d_m_data : (N,) array_like of float
@@ -571,9 +587,9 @@ def _auto_inversion_grid(d_m_data,
         measured log10 step is reused; the grid is extended by at least one bin
         on each side and clipped to `[min_d_m, max_d_m]`.
     pad_decades : float, optional (default 0.15)
-        Guard band in **decades** (log10) added below and above the measured range
-        For example, 0.15 extends the range by about ×1.41 on each side
-        (10**0.15 ≈ 1.41). If the range extends the absolute limits, it is clipped.
+        Guard band in **decades** (log10) added below the measured range
+        For example, 0.15 extends the range by about 1.41x (10**0.15 ≈ 1.41).
+        If the range extends the absolute limits, it is clipped.
     min_d_m and max_d_m : float, optional
         Absolute minimum and maximum diameter the inversion grid is allowed to take.
         These are mainly related to the min and max diameters the charge fraction
@@ -590,7 +606,7 @@ def _auto_inversion_grid(d_m_data,
     
     # Calculate the inversion grid bounds
     d_min = max(min_d_m, d_m_data[0] / (10.0 ** pad_decades))
-    d_max = min(max_d_m, d_m_data[-1] * (10.0 ** pad_decades))
+    d_max = max_d_m
     
     log_d_min = np.log10(d_min)
     log_d_max = np.log10(d_max)
