@@ -7,6 +7,7 @@ from scipy.stats import norm
 from tqdm import tqdm
 
 from MPSS_UQ.inversion_results import InversionResult
+from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
 
 # Prevent the system from throttling down the CPU by giving any process that uses
 # inversion methods a higher priority
@@ -24,7 +25,7 @@ except AttributeError:
 
 
 def invert_psd(
-        DMPS,         # DMPS or SMPS
+        sizer : DifferentialMobilityParticleSizer,  # Only DMPS implemented for now
         measurement,  # Measurement
         prior=None,   # If None, builds a default smoothness prior
         marginalize_ion_mobility=False,
@@ -39,24 +40,24 @@ def invert_psd(
     '''
     # Calculate the measured reporting_range:
     eps = 1e-16
-    lo = DMPS.d_m_data.min() - eps
-    hi = DMPS.d_m_data.max() + eps
+    lo = sizer.d_m_data.min() - eps
+    hi = sizer.d_m_data.max() + eps
     
-    i_start = np.searchsorted(DMPS.d_m, lo, side='left')
-    i_stop  = np.searchsorted(DMPS.d_m, hi, side='right')
+    i_start = np.searchsorted(sizer.d_m, lo, side='left')
+    i_stop  = np.searchsorted(sizer.d_m, hi, side='right')
     
     # Take the bins just outside the range to make sure to show the whole measured range
     i_start = max(0, i_start - 1)
-    i_stop = min(len(DMPS.d_m), i_stop + 1)
+    i_stop = min(len(sizer.d_m), i_stop + 1)
         
     sl_measured = slice(i_start, i_stop)
     
     if prior is None:
-        prior = smoothness_prior(DMPS.d_m, 0, 0.5, 1.5)
+        prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
     
     if marginalize_ion_mobility is False and marginalize_ion_ratio is False:
-        MAP, post_cov = Laplace_approximation(DMPS, prior, measurement)
-        return InversionResult(DMPS.d_m,
+        MAP, post_cov = Laplace_approximation(sizer, prior, measurement)
+        return InversionResult(sizer.d_m,
                                sl_measured,
                                post_mean_log10=MAP,
                                post_cov_log10=post_cov,
@@ -64,22 +65,22 @@ def invert_psd(
     
     else:
         posterior_samples, ion_property_samples = Laplace_approximation_marginalize(
-            DMPS, prior, measurement,
+            sizer, prior, measurement,
             marginalize_ion_mobility,
             marginalize_ion_ratio,
             num_samples=num_samples,
             )
-        return InversionResult(DMPS.d_m,
+        return InversionResult(sizer.d_m,
                                sl_measured,
                                post_samples=posterior_samples,
                                ion_property_samples=ion_property_samples,
                                )
 
 
-def log_post(vals, DMPS, L_noise, prior, y_meas):
+def log_post(vals, sizer, L_noise, prior, y_meas):
     ''' Compute the logarithm of the (non-normalized) posterior. '''
     
-    return -0.5 * np.linalg.norm(L_noise @ (y_meas - DMPS.forward_model(vals)))**2 \
+    return -0.5 * np.linalg.norm(L_noise @ (y_meas - sizer.forward_model(vals)))**2 \
         - 0.5 * np.linalg.norm(prior['L'] @ (vals - prior['mean']))**2
 
 
@@ -124,7 +125,12 @@ def smoothness_prior(d_m, mean, correlation_length, standard_deviation):
     return prior
 
 
-def Laplace_approximation(DMPS, prior, measurement, N_start=None):
+def Laplace_approximation(
+        sizer : DifferentialMobilityParticleSizer,
+        prior,
+        measurement,
+        N_start=None
+        ):
     ''' Compute the MAP estimate and Gaussian approximation to the posterior.
     This function assumes a positivity constraint in the form of a log10 transformation,
     and hence the returned values are given in log10-space.
@@ -144,8 +150,8 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
     else:
         N_guess = N_start
     
-    y_model = DMPS.forward_model(N_guess)
-    J = DMPS.system_matrix @ np.diag(10**N_guess) * np.log(10)
+    y_model = sizer.forward_model(N_guess)
+    J = sizer.system_matrix @ np.diag(10**N_guess) * np.log(10)
     
     if use_inversion_lemma:
         posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
@@ -155,7 +161,7 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
         posterior_covariance = np.linalg.inv(J.T @ measurement.inv_noise_cov @ J
                                              + prior['inv_covariance'])
     
-    args = (DMPS, measurement.noise_L, prior, measurement.output)
+    args = (sizer, measurement.noise_L, prior, measurement.output)
     
     i = 0
     max_iter = 20
@@ -163,7 +169,7 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
     enough_improvement = True
     required_improvement = 1e-6  # Minimum relative change in functional to keep iterating
     f_values = np.zeros(max_iter + 1)
-    f_values[0] = -log_post(N_guess, DMPS, measurement.noise_L, prior, measurement.output)
+    f_values[0] = -log_post(N_guess, sizer, measurement.noise_L, prior, measurement.output)
     
     while (i < max_iter) and not min_step_reached and enough_improvement:
         gradient = (J.T @ measurement.inv_noise_cov) @ (measurement.output - y_model) \
@@ -178,8 +184,8 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
         if (f_values[i] - f_values[i + 1]) / f_values[i] < required_improvement:
             enough_improvement = False
         
-        y_model = DMPS.forward_model(N_guess)
-        J = DMPS.system_matrix @ np.diag(10**N_guess) * np.log(10)
+        y_model = sizer.forward_model(N_guess)
+        J = sizer.system_matrix @ np.diag(10**N_guess) * np.log(10)
         
         if use_inversion_lemma:
             posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
@@ -198,7 +204,7 @@ def Laplace_approximation(DMPS, prior, measurement, N_start=None):
     return N_guess, posterior_covariance
 
 
-def Laplace_approximation_marginalize(DMPS,
+def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
                                       prior,
                                       measurement,
                                       marginalize_ion_mobility,
@@ -210,7 +216,7 @@ def Laplace_approximation_marginalize(DMPS,
     and/or the ratio of positive to negative ions. Returns samples from the posterior mixture.
     
     Input:
-        DMPS : an initialized instance of the DifferentialMobilityParticleSizer class
+        sizer : an initialized instance of the DifferentialMobilityParticleSizer class
         prior : a dictionary with the prior specifications for the PSD
         measurement : a dictionary with data on the measurement
         marginalize_ion_mobility : True/False
@@ -226,10 +232,10 @@ def Laplace_approximation_marginalize(DMPS,
     '''
     
     # Set seed for reproducibility
-    rng = np.random.default_rng(seed=1)
+    rng = np.random.default_rng()#seed=1)
     
     # Compute inversion and marginalize over ion mobility
-    n_bins = DMPS.d_m.shape[0]
+    n_bins = sizer.d_m.shape[0]
     
     if marginalize_ion_mobility:
         n_gridpoints_pos = 25
@@ -284,16 +290,16 @@ def Laplace_approximation_marginalize(DMPS,
                 
                 if marginalize_ion_ratio:
                     ion_ratio = np.random.normal(loc=1.0, scale=ion_ratio_std)
-                    DMPS.set_charger_properties(pos_ion_mobility,
+                    sizer.set_charger_properties(pos_ion_mobility,
                                                 neg_ion_mobility,
                                                 ion_ratio
                                                 )
                 else:
-                    DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
+                    sizer.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
                 
                 # Calculate the Laplace approximation
                 MAP_estimates_log10[i], posterior_covs_log10[i] = Laplace_approximation(
-                    DMPS,
+                    sizer,
                     prior,
                     measurement,
                     N_start=N_guess,
