@@ -94,7 +94,11 @@ def measurement_loader(dataset):
         yield dataset[i]
 
 
-def generate_DMPS_measurement(DMPS_prop, scenario):
+def generate_DMPS_measurement(DMPS_prop,
+                              scenario,
+                              pos_ion_mobility=1.35e-4,
+                              neg_ion_mobility=1.60e-4,
+                              ):
     ''' Simulate measurement data using a DMPS model.
     Input:
         DMPS_prop - the DMPS properties dictionary

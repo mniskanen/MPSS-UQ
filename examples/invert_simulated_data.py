@@ -54,7 +54,11 @@ DMPS_prop['d_m_data'] = np.geomspace(10e-9, 800e-9, num=30) # d_min, d_max, num_
 
 # Predefined PSD scenarios are:
 #     Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert
-measurement = generate_DMPS_measurement(DMPS_prop.copy(), scenario='Urban')
+measurement = generate_DMPS_measurement(DMPS_prop.copy(),
+                                        scenario='Urban',
+                                        pos_ion_mobility=1.40e-9,
+                                        neg_ion_mobility=1.90e-4,
+                                        )
 
 
 
