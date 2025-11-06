@@ -32,9 +32,13 @@ class Measurement:
     
     def compute_noise_statistics(self):
         if self.output_type == 'counts':
-            self.noise_cov = self.output.astype(np.float64)
-            # self.noise_cov = np.clip(self.output, 1, np.inf)
-            self.noise_cov += (2 + self.output * 0.01)**2
+            
+            if np.any(self.output < 0):
+                warnings.warn( "Observed negative counts. Clipping them to zero for noise " +
+                              "estimation purposes.", UserWarning)
+            
+            self.noise_cov = np.clip(self.output, 0, np.inf).astype(np.float64)
+            self.noise_cov += (2 + np.clip(self.output, 0, np.inf) * 0.01)**2
             self.inv_noise_cov = 1 / self.noise_cov
             
             # Matrix square root of the inverse noise covariance
@@ -125,9 +129,7 @@ def generate_DMPS_measurement(DMPS_prop,
     
     DMPS.set_operating_conditions(temperature, pressure)
 
-    # Set charger ion properties for the measurement (if using the LYF model)
-    pos_ion_mobility = 1.4e-4
-    neg_ion_mobility = 1.9e-4
+    # Set charger ion properties for the measurement
     DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
     
     # from MPSS_UQ.plotfunctions import plot_system_matrix
