@@ -56,11 +56,11 @@ def invert_psd(
         prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
     
     if marginalize_ion_mobility is False and marginalize_ion_ratio is False:
-        MAP, post_cov = Laplace_approximation(sizer, prior, measurement)
+        MAP, post_cov_L = Laplace_approximation(sizer, prior, measurement)
         return InversionResult(sizer.d_m,
                                sl_measured,
                                post_mean_log10=MAP,
-                               post_cov_log10=post_cov,
+                               post_covL_log10=post_cov_L,
                                )
     
     else:
@@ -198,10 +198,9 @@ def Laplace_approximation(
         i += 1
     
     # Make sure that the posterior covariance is symmetric
-    if np.all(np.abs(posterior_covariance - posterior_covariance.T) >= 1e-15):
-        posterior_covariance = (posterior_covariance + posterior_covariance.T) / 2
+    posterior_covariance = (posterior_covariance + posterior_covariance.T) / 2
         
-    return N_guess, posterior_covariance
+    return N_guess, np.linalg.cholesky(posterior_covariance)
 
 
 def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
@@ -272,9 +271,8 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
         return
     
     MAP_estimates_log10 = np.zeros((n_invert, n_bins))
-    posterior_covs_log10 = np.zeros((n_invert, n_bins, n_bins))
-    log_posts = np.zeros((n_gridpoints_pos, n_gridpoints_neg)) * np.nan
-    posterior_cov_Ls_log10 = np.zeros((n_invert, n_bins, n_bins)) * np.nan
+    posterior_cov_Ls_log10 = np.zeros((n_invert, n_bins, n_bins))
+    log_posts = np.zeros((n_gridpoints_pos, n_gridpoints_neg))
     ion_properties = np.zeros((n_invert, 3))
     
     # Starting guess for the Laplace approximation
@@ -298,15 +296,12 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
                     sizer.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
                 
                 # Calculate the Laplace approximation
-                MAP_estimates_log10[i], posterior_covs_log10[i] = Laplace_approximation(
+                MAP_estimates_log10[i], posterior_cov_Ls_log10[i] = Laplace_approximation(
                     sizer,
                     prior,
                     measurement,
                     N_start=N_guess,
                     )
-                
-                # Calculate the Cholesky factor
-                posterior_cov_Ls_log10[i] = np.linalg.cholesky(posterior_covs_log10[i])
                 
                 # Store ion properties
                 ion_properties[i] = pos_ion_mobility, neg_ion_mobility, ion_ratio

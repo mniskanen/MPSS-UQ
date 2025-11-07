@@ -66,7 +66,7 @@ class InversionResult:
                  d_m_full,
                  sl_measured,
                  post_mean_log10=None,
-                 post_cov_log10=None,
+                 post_covL_log10=None,
                  post_samples=None,
                  ion_property_samples=None,
                  reporting_range='measured',
@@ -79,7 +79,7 @@ class InversionResult:
         self.binwidth = np.log10(self._d_m_full[1]) - np.log10(self._d_m_full[0])
         
         # Check the inputs
-        input1 = post_mean_log10 is not None and post_cov_log10 is not None
+        input1 = post_mean_log10 is not None and post_covL_log10 is not None
         input2 = post_samples is not None
         
         given_inputs = np.sum([input1, input2])
@@ -91,7 +91,7 @@ class InversionResult:
         
         if input1:
             self.post_mean_log10 = post_mean_log10
-            self.post_cov_log10 = post_cov_log10
+            self.post_covL_log10 = post_covL_log10
             self.input_mode = 'gaussian-log10'
         
         elif input2:
@@ -133,7 +133,8 @@ class InversionResult:
     def _postprocess_results_from_covariance_log10(self, CI):
         
         # Calculate the requested credible interval estimates
-        sigma = np.sqrt(np.diag(self.post_cov_log10[self.sl, self.sl]))
+        # Marginal stds: sigma_i = sqrt(sum_j C[i,j]^2)
+        sigma = np.sqrt(np.sum(self.post_covL_log10[self.sl, :]**2, axis=1))
         k = norm.ppf(0.5 + CI / 100 / 2)
         
         CI_lower = 10**(self.post_mean_log10[self.sl] - k * sigma)
@@ -205,10 +206,8 @@ class InversionResult:
                 n_samples = 5000
             
             # We have to sample because of the nonlinear transformation
-            if self.cov_log10_cholesky is None:
-                self.cov_log10_cholesky = np.linalg.cholesky(self.post_cov_log10[self.sl, self.sl])
             post_samples_log10 = self.post_mean_log10[self.sl, None] \
-                + self.cov_log10_cholesky @ self.rng.normal(
+                + self.post_covL_log10[self.sl, self.sl] @ self.rng.normal(
                 loc=0.0, scale=1.0, size=(self.d_m.shape[0], n_samples)
                 )
             # Do 10^samples, but using np.exp (faster)
@@ -223,12 +222,10 @@ class InversionResult:
         '''
         
         if self.input_mode == 'gaussian-log10':
-            if self.cov_log10_cholesky is None:
-                self.cov_log10_cholesky = np.linalg.cholesky(self.post_cov_log10[self.sl, self.sl])
-            
-            return 10**(self.post_mean_log10[self.sl] + self.cov_log10_cholesky @ self.rng.normal(
-                loc=0.0, scale=1.0, size=self.post_mean_log10[self.sl].shape[0]
-                ))
+            return 10**(self.post_mean_log10[self.sl] 
+                        + self.post_covL_log10[self.sl, self.sl]
+                        @ self.rng.normal(loc=0.0, scale=1.0, size=len(self.d_m))
+                        )
         
         else:
             raise ValueError("Posterior samples for input_mode=='samples' are found in " +
