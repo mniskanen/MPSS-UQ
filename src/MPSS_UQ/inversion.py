@@ -80,7 +80,7 @@ def invert_psd(
 def log_post(vals, sizer, L_noise, prior, y_meas):
     ''' Compute the logarithm of the (non-normalized) posterior. '''
     
-    return -0.5 * np.linalg.norm(L_noise @ (y_meas - sizer.forward_model(vals)))**2 \
+    return -0.5 * np.linalg.norm(L_noise * (y_meas - sizer.forward_model(vals)))**2 \
         - 0.5 * np.linalg.norm(prior['L'] @ (vals - prior['mean']))**2
 
 
@@ -151,17 +151,19 @@ def Laplace_approximation(
         N_guess = N_start
     
     y_model = sizer.forward_model(N_guess)
-    J = sizer.system_matrix @ np.diag(10**N_guess) * np.log(10)
+    J = sizer.system_matrix * (10**N_guess * np.log(10))
     
     if use_inversion_lemma:
-        posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
-            measurement.noise_cov + J @ prior['covariance'] @ J.T
-            ) @ J @ prior['covariance']
+        JQ = J @ prior['covariance']
+        S = JQ @ J.T
+        S[np.diag_indices_from((S))] += measurement.noise_cov
+        posterior_covariance = prior['covariance'] \
+            - JQ.T @ np.linalg.inv(S) @ JQ
     else:
-        posterior_covariance = np.linalg.inv(J.T @ measurement.inv_noise_cov @ J
+        posterior_covariance = np.linalg.inv(J.T @ (measurement.inv_noise_cov[:, None] * J)
                                              + prior['inv_covariance'])
     
-    args = (sizer, measurement.noise_L, prior, measurement.output)
+    args = (sizer, measurement.inv_noise_L, prior, measurement.output)
     
     i = 0
     max_iter = 20
@@ -169,10 +171,10 @@ def Laplace_approximation(
     enough_improvement = True
     required_improvement = 1e-6  # Minimum relative change in functional to keep iterating
     f_values = np.zeros(max_iter + 1)
-    f_values[0] = -log_post(N_guess, sizer, measurement.noise_L, prior, measurement.output)
+    f_values[0] = -log_post(N_guess, sizer, measurement.inv_noise_L, prior, measurement.output)
     
     while (i < max_iter) and not min_step_reached and enough_improvement:
-        gradient = (J.T @ measurement.inv_noise_cov) @ (measurement.output - y_model) \
+        gradient = (J.T * measurement.inv_noise_cov) @ (measurement.output - y_model) \
             - prior['inv_covariance'] @ (N_guess - prior['mean'])
         GN_dir = posterior_covariance @ gradient
         
@@ -185,14 +187,16 @@ def Laplace_approximation(
             enough_improvement = False
         
         y_model = sizer.forward_model(N_guess)
-        J = sizer.system_matrix @ np.diag(10**N_guess) * np.log(10)
+        J = sizer.system_matrix * (10**N_guess * np.log(10))
         
         if use_inversion_lemma:
-            posterior_covariance = prior['covariance'] - prior['covariance'] @ J.T @ np.linalg.inv(
-                measurement.noise_cov + J @ prior['covariance'] @ J.T
-                ) @ J @ prior['covariance']
+            JQ = J @ prior['covariance']
+            S = JQ @ J.T
+            S[np.diag_indices_from((S))] += measurement.noise_cov
+            posterior_covariance = prior['covariance'] \
+                - JQ.T @ np.linalg.inv(S) @ JQ
         else:
-            posterior_covariance = np.linalg.inv(J.T @ measurement.inv_noise_cov @ J
+            posterior_covariance = np.linalg.inv(J.T @ (measurement.inv_noise_cov[:, None] * J)
                                                  + prior['inv_covariance'])
         
         i += 1

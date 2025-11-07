@@ -41,14 +41,9 @@ class Measurement:
             self.noise_cov += (2 + np.clip(self.output, 0, np.inf) * 0.01)**2
             self.inv_noise_cov = 1 / self.noise_cov
             
-            # Matrix square root of the inverse noise covariance
-            self.noise_L = np.sqrt(self.inv_noise_cov)
-            
-            # Make them matrices
-            self.noise_cov = np.diag(self.noise_cov)
-            self.inv_noise_cov = np.diag(self.inv_noise_cov)
-            self.noise_L = np.diag(self.noise_L)
-            
+            # Square root of the inverse noise covariance
+            self.inv_noise_L = np.sqrt(self.inv_noise_cov)
+        
         elif self.output_type == 'concentration':
             # TODO
             raise TypeError('Concentration output has not been implemented yet. It is ' +
