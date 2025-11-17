@@ -421,7 +421,7 @@ class DifferentialMobilityParticleSizer:
                     transfer_function[c_idx, z_idx] += (
                         # self._tf_element_nondiffusive(Z_modelled, Z_target)
                         self._tf_element_diffusive(Z_modelled, Z_target, charge, temperature)
-                        ) #/ binwidth
+                        )
             
             elif compute_using == 'trapezoidal rule':
                 # Calculate the integral over the bin using the trapezoidal rule

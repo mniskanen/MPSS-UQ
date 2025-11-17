@@ -160,7 +160,7 @@ class InversionResult:
         """ Calculate (if needed) and return the posterior variance.
         """
         if self.input_mode == 'gaussian-log10':
-            return np.diag(self.post_cov_log10[self.sl, self.sl])
+            return np.diag(self.post_covL_log10[self.sl, self.sl])**2
         elif self.input_mode == 'samples':
             return np.var(np.log10(self.post_samples[:, self.sl]), axis=0)
     
