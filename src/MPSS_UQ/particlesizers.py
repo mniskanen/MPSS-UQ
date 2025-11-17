@@ -113,7 +113,7 @@ class DifferentialMobilityParticleSizer:
         self.system_matrix = np.zeros((self.d_m_data.shape[0], self.d_m.shape[0]))
         
         # Initialize the CPC
-        self.CPC = CondensationParticleCounter(self.d_m_data, properties)
+        self.CPC = CondensationParticleCounter(self.d_m, properties)
         
         self.operating_conditions_set = False
         
@@ -242,9 +242,9 @@ class DifferentialMobilityParticleSizer:
                 self.transfer_function[c_idx] * self.charging_probability[c_idx]
                 )
         
-        self.system_matrix *= self.CPC.counting_efficiency[:, np.newaxis]
-        self.system_matrix *= self.penetration_efficiency[:, np.newaxis]
-        self.system_matrix *= self.sampling_line_loss[:, np.newaxis]
+        self.system_matrix *= self.CPC.counting_efficiency[np.newaxis, :]
+        self.system_matrix *= self.penetration_efficiency[np.newaxis, :]
+        self.system_matrix *= self.sampling_line_loss[np.newaxis, :]
         
         # Change output from concentration to counts
         if self.CPC.output_type == 'counts':
@@ -274,7 +274,7 @@ class DifferentialMobilityParticleSizer:
         b = 0.2672
         c = 0.10079
         
-        D = particle_diffusivity(self.d_m_data, self.temperature, self.pressure)
+        D = particle_diffusivity(self.d_m, self.temperature, self.pressure)
         
         # Particle diffusion coefficient
         tau = np.pi * D * self.L_eff / self.Qa
@@ -289,11 +289,11 @@ class DifferentialMobilityParticleSizer:
         ''' Calculate sampling line losses. '''
         
         if self.inlet_lengths is None or len(self.inlet_lengths) == 0:
-            return np.ones_like(self.d_m_data, dtype=float)
+            return np.ones_like(self.d_m, dtype=float)
         if np.any(np.asarray(self.inlet_lengths) <= 0):
             raise ValueError("All inlet lengths must be > 0.")
         
-        D = particle_diffusivity(self.d_m_data, self.temperature, self.pressure)
+        D = particle_diffusivity(self.d_m, self.temperature, self.pressure)
         
         mu = (self.inlet_lengths[:, None] * D[None, :]) / self.Qa
         

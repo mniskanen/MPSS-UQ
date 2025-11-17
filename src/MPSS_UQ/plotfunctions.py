@@ -71,12 +71,12 @@ def plot_system_matrix(DMPS, num=None, title=None):
     
     plt.gca().invert_yaxis()
     plt.title(f'DMPS system matrix{title}')
-    plt.xlabel('Modelled particle diameters (nm)')
-    plt.ylabel('Measured particle diameters (nm)')
+    plt.xlabel('Modelled diameter (nm)')
+    plt.ylabel('Nominal measured diameter (nm)')
     plt.xscale('log')
     plt.yscale('log')
     plt.axis('equal')
-    # plt.colorbar()
+    plt.colorbar()
 
 
 def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverage=95):
