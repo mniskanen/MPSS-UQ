@@ -346,8 +346,8 @@ class DifferentialMobilityParticleSizer:
         TF = sigma / (np.sqrt(2) * self.beta * (1 - self.delta)) * (
             self._tf_eps((Z_ratio - (1 + self.beta)) / (np.sqrt(2) * sigma))
             + self._tf_eps((Z_ratio - (1 - self.beta)) / (np.sqrt(2) * sigma))
-            - self._tf_eps((Z_ratio - (1 + self.beta * sigma)) / (np.sqrt(2) * sigma))
-            - self._tf_eps((Z_ratio - (1 - self.beta * sigma)) / (np.sqrt(2) * sigma))
+            - self._tf_eps((Z_ratio - (1 + self.beta * self.delta)) / (np.sqrt(2) * sigma))
+            - self._tf_eps((Z_ratio - (1 - self.beta * self.delta)) / (np.sqrt(2) * sigma))
             )
     
         # Set possible negative values (numerical artifacts) to zero
