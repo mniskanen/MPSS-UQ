@@ -52,7 +52,8 @@ class LYFChargingModel:
             if self.use_flux_interpolator:
                 raise Warning('Flux interpolator overrides manual max_considered_charge')
             
-            assert max_considered_charge >= np.max(np.abs(self.particle_charges_out))
+            assert max_considered_charge >= np.max(np.abs(self.particle_charges_out)), \
+                   'Max. modelled number of charges must be >= max. number of output charges'
             max_charge = max_considered_charge
             
         else:
@@ -788,13 +789,13 @@ class LYFFluxInterpolator:
         average_flux_coefficients = np.zeros((2, self.n_charges, d_m.shape[0]))
         for idx in range(self.n_charges):
             average_flux_coefficients[0, idx] = self.interpolator[0][idx](
-                (log_diam, scaled_pos_mob, scaled_neg_mob), method='linear'
+                (log_diam, scaled_pos_mob, scaled_neg_mob)
                 )
             average_flux_coefficients[1, idx] = self.interpolator[1][idx](
-                (log_diam, scaled_pos_mob, scaled_neg_mob), method='linear'
+                (log_diam, scaled_pos_mob, scaled_neg_mob)
                 )
         
-        return average_flux_coefficients
+        return 10**average_flux_coefficients
     
     
     def save_interpolators(self, fname):
@@ -837,17 +838,18 @@ class LYFFluxInterpolator:
         scaled_pos_mob = data['pos_ion_mobility_eval'] * 1e4
         scaled_neg_mob = data['neg_ion_mobility_eval'] * 1e4
         
-        flux_coeffs = data['flux_coeffs']
+        eps = np.finfo(data['flux_coeffs'].dtype).tiny
+        log_flux_coeffs = np.log10(np.clip(data['flux_coeffs'], eps, None))
         
         # Construct the interpolator based on the saved values
         for i in range(self.n_charges):
             self.interpolator_neg_ion[i] = RegularGridInterpolator(
                 (log_diam, scaled_pos_mob, scaled_neg_mob),
-                flux_coeffs[0, i],
+                log_flux_coeffs[0, i]
                 )
             self.interpolator_pos_ion[i] = RegularGridInterpolator(
                 (log_diam, scaled_pos_mob, scaled_neg_mob),
-                flux_coeffs[1, i],
+                log_flux_coeffs[1, i]
                 )
         
         self.interpolator = (self.interpolator_neg_ion, self.interpolator_pos_ion)
