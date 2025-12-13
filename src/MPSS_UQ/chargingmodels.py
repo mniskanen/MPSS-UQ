@@ -20,7 +20,7 @@ class LYFChargingModel:
         particle_radius : radius of the aerosol particles of interest
         particle_charges_output : sign and number of elementary charges on the particles
         temperature : temperature
-        max_considered_charge : how many charges are taken into account when calculating the 
+        max_modelled_charge : how many charges are taken into account when calculating the 
                                 charge fractions
         flux_interpolator : (optional) an interpolator object (pre-computed) that replaces
                             the expensive calculations of the average flux coefficients by
@@ -32,7 +32,7 @@ class LYFChargingModel:
                  particle_radius,
                  particle_charges_output,
                  temperature=None,
-                 max_considered_charge=None,
+                 max_modelled_charge=None,
                  flux_interpolator=None
                  ):
         
@@ -42,25 +42,38 @@ class LYFChargingModel:
         self.particle_charges_out = particle_charges_output
         
         if flux_interpolator is not None:
-            self.use_flux_interpolator = True
             self.flux_interpolator = flux_interpolator
+            
+            if max_modelled_charge is not None:
+                raise ValueError("Cannot set 'max_modelled_charge' when using a flux interpolator")
+            
+            if flux_interpolator.max_modelled_charge < np.max(np.abs(self.particle_charges_out)):
+                raise ValueError('Max. number of modelled charges in the flux interpolator ' +
+                                 'is smaller than the max. number of requested charges '+
+                                 f'({flux_interpolator.max_modelled_charge} < ' +
+                                 f'{np.max(np.abs(self.particle_charges_out))}). ' +
+                                 'Either reduce the number of requested charges or ' +
+                                 'use a different flux interpolator.')
+            
+            max_charge = flux_interpolator.max_modelled_charge
+            self.use_flux_interpolator = True
+        
         else:
             self.use_flux_interpolator = False
         
-        # Calculate (internally) up to this number of charges for the LYF model to be accurate
-        if max_considered_charge:
-            if self.use_flux_interpolator:
-                raise Warning('Flux interpolator overrides manual max_considered_charge')
+            # Calculate (internally) up to this number of charges for the LYF model to be accurate
+            if max_modelled_charge is None:
+                max_charge = np.maximum(25, np.max(np.abs(self.particle_charges_out)))
             
-            assert max_considered_charge >= np.max(np.abs(self.particle_charges_out)), \
-                   'Max. modelled number of charges must be >= max. number of output charges'
-            max_charge = max_considered_charge
-            
-        else:
-            max_charge = 25
-        
-        if self.use_flux_interpolator:
-            max_charge = flux_interpolator.max_considered_charge
+            else:
+                if max_modelled_charge < np.max(np.abs(self.particle_charges_out)):
+                    raise ValueError('User-given max. number of modelled charges ' +
+                                     'is smaller than the max. number of requested charges '+
+                                     f'({max_modelled_charge} < ' +
+                                     f'{np.max(np.abs(self.particle_charges_out))}). ' +
+                                     'Either reduce the number of requested charges or ' +
+                                     'increase the max. number of modelled charges.')
+                max_charge = max_modelled_charge
         
         self.particle_charges = np.arange(-max_charge, max_charge + 1)
         
@@ -204,8 +217,6 @@ class LYFChargingModel:
             neutral_probability,
             charge_state_probability[n_neg:]
             ]
-        
-        charge_state_probability = np.clip(charge_state_probability, 1e-16, 1)
         
         # Return only what was requested by the user
         return_idx = np.nonzero(self.particle_charges[:, None] == self.particle_charges_out)[0]
