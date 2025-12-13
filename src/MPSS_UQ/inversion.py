@@ -245,7 +245,7 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
         n_gridpoints_neg = int(n_gridpoints_pos * 1.05 / 0.65)
         n_invert = n_gridpoints_pos * n_gridpoints_neg
         pos_ion_mobilities = np.linspace(1.05e-4, 1.70e-4, n_gridpoints_pos + 1)
-        neg_ion_mobilities = np.linspace(1.05e-4, 2.10e-4, n_gridpoints_neg + 1)
+        neg_ion_mobilities = np.linspace(1.10e-4, 2.10e-4, n_gridpoints_neg + 1)
     
         # Midpoints
         pos_ion_mobilities = pos_ion_mobilities[0:-1] \

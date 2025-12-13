@@ -459,6 +459,7 @@ class DifferentialMobilityParticleSizer:
         ''' Initialize the charging model and assign a standardized callable. '''
     
         self.charging_model_name = model
+        interpolator_fname = resources.files('MPSS_UQ.data') / 'LYF_interpolator_data.npz'
     
         if model == 'Wiedensohler':
             self.charger = WiedensohlerChargingModel(self.d_m / 2, self.charges)
@@ -467,20 +468,18 @@ class DifferentialMobilityParticleSizer:
             self.charger = LYFChargingModel(self.d_m / 2, self.charges)
     
         elif model == 'LYF-interp-flux':
-            fname = resources.files('MPSS_UQ.data') / 'interpolator_flux_60dm_307'
-            flux_interpolator = LYFFluxInterpolator(fname)
+            flux_interpolator = LYFFluxInterpolator(interpolator_fname)
             self.charger = LYFChargingModel(
                 self.d_m / 2, self.charges, flux_interpolator=flux_interpolator
                 )
         
         elif model == 'LYF-interp':
-            fname = resources.files('MPSS_UQ.data') / 'charging_prob_interpolator_data.npz'
-            self.charger = LYFInterpolator(fname)
+            self.charger = LYFInterpolator(self.d_m / 2, self.charges, interpolator_fname)
     
         else:
             raise Exception('Unknown charging model')
     
-        self.charging_model = ChargingModelWrapper(model, self.charger, self.d_m, self.charges)
+        self.charging_model = ChargingModelWrapper(model, self.charger)
     
     
     def compute_charging_probability(self, *args):

@@ -2,12 +2,15 @@
 
 import numpy as np
 
+from joblib import Parallel, delayed
+import psutil
 from scipy.interpolate import RegularGridInterpolator
 from tqdm import tqdm
 from scipy.optimize import minimize_scalar, brentq
 from scipy.integrate import quad
 from scipy.special import hyp2f1
 from dataclasses import dataclass
+from functools import lru_cache
 
 from MPSS_UQ.aerosol import (BOLTZMANN_CONSTANT, ELECTRON_CHARGE,
                              AIR_RELATIVE_PERMITTIVITY, VACUUM_PERMITTIVITY)
@@ -519,44 +522,27 @@ class LYFChargingModel:
         return phi
 
 
-class LYFInterpolator:
-    ''' Fast evaluation of the LYF model charging probability.
-    Based on (pre)computing a representative grid of values and an interpolator object for them.
-    Evaluation consists then only of evaluating the interpolator.
+class LYFInterpolatorPrecomputation:
+    """ This class does the precomputations needed to construct the LYF interpolators for faster
+    evaluation of the model.
+    """
     
-    LYF model parameters currently implemented:
-        - mobility of positive ions
-        - mobility of negative ions
-    '''
-    
-    def __init__(self, saved_interpolator_file=None):
+    def __init__(self):
         
-        if saved_interpolator_file:
-            self.load_interpolators(saved_interpolator_file)
-            
-        else:
-            self.values = None
-            self.interpolator = None
-    
-    
-    def construct_interpolators(self, charges_output=None, parameter_bounds=None):
+        self.charge_probabilities = None
+        self.flux_coeffs = None
         
-        if charges_output is None:
-            self.charges_output = np.arange(-8, 8+1)
-        else:
-            self.charges_output = charges_output
-        
-        if parameter_bounds is None:
-            parameter_bounds = {
-                'min_d_m' : 1e-9,  # m
-                'max_d_m' : 2500e-9,
-                'min_pos_ion_mobility' : 1.05e-4,  # m^2 V^-1 s^-1
-                'max_pos_ion_mobility' : 1.70e-4,
-                'min_neg_ion_mobility' : 1.05e-4,
-                'max_neg_ion_mobility' : 2.10e-4,
-                }
-        
+        self.charges_output = np.arange(-10, 10+1)
         self.n_charges = self.charges_output.shape[0]
+        
+        parameter_bounds = {
+            'min_d_m' : 1e-9,  # m
+            'max_d_m' : 2500e-9,
+            'min_pos_ion_mobility' : 1.05e-4,  # m^2 V^-1 s^-1
+            'max_pos_ion_mobility' : 1.70e-4,
+            'min_neg_ion_mobility' : 1.10e-4,
+            'max_neg_ion_mobility' : 2.10e-4,
+            }
         
         self.d_m_bounds = np.array([parameter_bounds['min_d_m'],
                                     parameter_bounds['max_d_m']])
@@ -565,7 +551,7 @@ class LYFInterpolator:
         self.neg_ion_mobility_bounds = np.array([parameter_bounds['min_neg_ion_mobility'],
                                                  parameter_bounds['max_neg_ion_mobility']])
         
-        self.n_d_m = 30
+        self.n_d_m = 40
         self.n_mob = 10
         self.d_m = np.geomspace(self.d_m_bounds[0], self.d_m_bounds[1], self.n_d_m)
         self.pos_ion_mobility = np.linspace(self.pos_ion_mobility_bounds[0],
@@ -579,35 +565,147 @@ class LYFInterpolator:
         
         self.charging_model = LYFChargingModel(self.d_m / 2,
                                                self.charges_output,
-                                               max_considered_charge=25
+                                               max_modelled_charge=25
                                                )
+    
+    
+    def compute(self):
         
-        # Multiple tqdm progress bars don't work with some IDEs, so disable the charging model one
-        self.charging_model.show_progressbar = False
+        # # Multiple tqdm progress bars don't work with some IDEs, disable the charging model one
+        # self.charging_model.show_progressbar = False
+        print("This progress bars goes crazy because it's updated by multiple calculations" +
+              " that are run in parallel :)")
         
         # Preallocate
-        self.values = np.zeros((self.n_charges, self.n_d_m, self.n_mob, self.n_mob))
+        self.charge_probabilities = np.zeros(
+            (self.n_charges, self.n_d_m, self.n_mob, self.n_mob))
+        self.flux_coeffs = np.zeros(
+            (2, self.charging_model.particle_charges.shape[0], self.n_d_m, self.n_mob, self.n_mob))
         
-        pbar = tqdm(position=0, desc='Creating interpolators')
-        pbar.reset(total = self.n_mob * self.n_mob)
-        for i, pos_ion_mob in enumerate(self.pos_ion_mobility):
-            for j, neg_ion_mob in enumerate(self.neg_ion_mobility):
-                self.values[:, :, i, j] = self.charging_model.charging_probability(pos_ion_mob,
-                                                                                   neg_ion_mob,
-                                                                                   )
-                pbar.update(1)
+        def worker(args):
+            i, j, pos_mob, neg_mob = args
+            cp = self.charging_model.charging_probability(pos_mob, neg_mob)
+            fc = self.charging_model.average_flux_coefficients
+            return i, j, cp, fc
         
-        pbar.refresh()
+        # Set the number of processes
+        n_cpus = psutil.cpu_count(logical=False)
+        n_jobs = max(1, n_cpus - 1)
+        
+        I, J = len(self.pos_ion_mobility), len(self.neg_ion_mobility)
+                
+        args_list = [(i, j, self.pos_ion_mobility[i], self.neg_ion_mobility[j])
+                     for i in range(I) for j in range(J)]
+        
+        results = Parallel(n_jobs=n_jobs, backend="loky")(
+                    delayed(worker)(args) for args in args_list
+                    )
+        
+        for i, j, cp, fc in results:
+            self.charge_probabilities[:, :, i, j] = cp
+            self.flux_coeffs[:, :, :, i, j] = fc
     
     
-    def __call__(self, d_m, pos_mobility, neg_mobility, charges=None):
-        ''' Evaluate the charging probabilities for the given input parameters.
-        The input d_m can be a vector.
-        '''
-        # Check if the input is within the interpolator bounds
+    def save_precomputed_data(self, fname):
+        
+        if self.charge_probabilities is None:
+            raise ValueError('Calculate the interpolator values first.')
+        if self.flux_coeffs is None:
+            raise ValueError('Calculate the interpolator values first.')
+        
+        # Save the evaluation points and corresponding values
+        np.savez(fname,
+                 allow_pickle=False,
+                 charges_output=self.charges_output,
+                 charges_modelled=self.charging_model.particle_charges,
+                 d_m_bounds=self.d_m_bounds,
+                 pos_ion_mobility_bounds=self.pos_ion_mobility_bounds,
+                 neg_ion_mobility_bounds=self.neg_ion_mobility_bounds,
+                 d_m_eval=self.d_m,
+                 pos_ion_mobility_eval=self.pos_ion_mobility,
+                 neg_ion_mobility_eval=self.neg_ion_mobility,
+                 charge_probabilities=self.charge_probabilities,
+                 flux_coeffs=self.flux_coeffs,
+                 )
+
+
+class LYFInterpolator:
+    ''' Fast evaluation of the LYF model charging probability.
+    Based on (pre)computing a representative grid of values and an interpolator object for them.
+    Evaluation consists then only of evaluating the interpolator.
+    
+    LYF model parameters currently implemented:
+        - mobility of positive ions
+        - mobility of negative ions
+    '''
+    
+    def __init__(self,
+                 particle_radius,
+                 particle_charges_output,
+                 saved_interpolator_file,
+                 ):
+        
+        self.d_m = 2 * particle_radius
+        self.charges_output = particle_charges_output
+        
+        self.load_interpolators(saved_interpolator_file)
+        
+        # Check that the diameters are within the interpolator bounds
         mask = np.array([
-            self.d_m_bounds[0] <= d_m[0] <= self.d_m_bounds[1],
-            self.d_m_bounds[0] <= d_m[-1] <= self.d_m_bounds[1],
+            self.d_m_bounds[0] <= self.d_m[0] <= self.d_m_bounds[1],
+            self.d_m_bounds[0] <= self.d_m[-1] <= self.d_m_bounds[1],
+            ])
+        
+        if not np.all(mask):
+            # Get indices of invalid entries
+            invalid_indices = np.where(~mask)[0]
+            messages = []
+            for i in invalid_indices:
+                if i == 0:
+                    messages.append(
+                        f"d_m[0] = {self.d_m[0]} not in " +
+                        f"[{self.d_m_bounds[0]}, {self.d_m_bounds[1]}]"
+                        )
+                elif i == 1:
+                    messages.append(
+                        f"d_m[-1] = {self.d_m[-1]} not in " +
+                        f"[{self.d_m_bounds[0]}, {self.d_m_bounds[1]}]"
+                        )
+            raise ValueError("Input not within interpolator bounds:\n" + "\n".join(messages))
+        
+        # Scale
+        self.log_diam = np.log10(self.d_m)
+        
+        # Check that we're not trying to interpolate charges that haven't been precomputed
+        if np.min(self.charges_output) < np.min(self.all_charges_output) \
+            or np.max(self.charges_output) > np.max(self.all_charges_output):
+                raise ValueError('Requested charge outside the precomputed range. ' +
+                                 f'Valid charge range: {self.all_charges_output[0]} to ' +
+                                 f'{self.all_charges_output[-1]}.')
+        
+        self.charge_idx = np.nonzero(self.all_charges_output[:, None] == self.charges_output)[0]
+        self.n_charges = self.charges_output.shape[0]
+        
+        # Preallocate
+        self.eval_points = np.zeros((self.log_diam.shape[0], 3), dtype=np.float32)
+        self.eval_points[:, 0] = self.log_diam  # diameter is known at initialization time
+    
+    
+    
+    def charging_probability(self, pos_ion_mobility, neg_ion_mobility):
+        ''' Returns the charging probability given the input ion movilities.
+        A wrapper function that quantizes the inputs to make use of LRU cache. '''
+        
+        pos_mob_quantized = np.round(pos_ion_mobility, 8)
+        neg_mob_quantized = np.round(neg_ion_mobility, 8)
+        
+        return self._charging_probability(pos_mob_quantized, neg_mob_quantized)
+    
+    
+    @lru_cache(maxsize=1024)
+    def _charging_probability(self, pos_mobility, neg_mobility):
+        
+        mask = np.array([
             self.pos_ion_mobility_bounds[0] <= pos_mobility <= self.pos_ion_mobility_bounds[1],
             self.neg_ion_mobility_bounds[0] <= neg_mobility <= self.neg_ion_mobility_bounds[1],
             ])
@@ -619,96 +717,49 @@ class LYFInterpolator:
             for i in invalid_indices:
                 if i == 0:
                     messages.append(
-                        f"d_m[0] = {d_m[0]} not in [{self.d_m_bounds[0]}, {self.d_m_bounds[1]}]"
-                        )
-                elif i == 1:
-                    messages.append(
-                        f"d_m[-1] = {d_m[-1]} not in [{self.d_m_bounds[0]}, {self.d_m_bounds[1]}]"
-                        )
-                elif i == 2:
-                    messages.append(
                         f"pos_mobility = {pos_mobility} not in " + 
                         f"[{self.pos_ion_mobility_bounds[0]}, {self.pos_ion_mobility_bounds[1]}]"
                         )
-                elif i == 3:
+                elif i == 1:
                     messages.append(
                         f"neg_mobility = {neg_mobility} not in " + 
                         f"[{self.neg_ion_mobility_bounds[0]}, {self.neg_ion_mobility_bounds[1]}]"
                         )
             raise ValueError("Input not within interpolator bounds:\n" + "\n".join(messages))
-
         
-        if charges is None:
-            # Return all charges
-            n_charges = len(self.interpolator)
-            charge_idx = np.arange(n_charges)
-            
-        else:
-             # We're requesting only some of the available charges
-             charge_idx = np.nonzero(self.charges_output[:, None] == charges)[0]
-             n_charges = charges.shape[0]
+        # Scale and fill eval_points in-place
+        self.eval_points[:, 1].fill(pos_mobility * 1e4)
+        self.eval_points[:, 2].fill(neg_mobility * 1e4)
         
-        # scale
-        log_diam = np.log10(d_m)
-        scaled_pos_mob = pos_mobility * 1e4
-        scaled_neg_mob = neg_mobility * 1e4
-        
-        charge_probabilities = np.zeros((n_charges, d_m.shape[0]))
-        for count, chrg_idx in enumerate(charge_idx):
-            charge_probabilities[count] = self.interpolator[chrg_idx](
-                (log_diam, scaled_pos_mob, scaled_neg_mob)
-                )
-        
-        return 10**charge_probabilities  # Scale back
-    
-    
-    def save_interpolators(self, fname):
-        
-        if self.values is None:
-            raise ValueError('Calculate the interpolator values first.')
-        
-        # For numerical reasons use log10-transformed values for the interpolator
-        log10_values = np.log10(self.values)
-        
-        # Save the evaluation points and corresponding values
-        np.savez(fname,
-                 allow_pickle=False,
-                 charges=self.charges_output,
-                 d_m_bounds=self.d_m_bounds,
-                 pos_ion_mobility_bounds=self.pos_ion_mobility_bounds,
-                 neg_ion_mobility_bounds=self.neg_ion_mobility_bounds,
-                 d_m_eval=self.d_m,
-                 pos_ion_mobility_eval=self.pos_ion_mobility,
-                 neg_ion_mobility_eval=self.neg_ion_mobility,
-                 log10_values=log10_values,
-                 )
+        return np.pow(10, self.interpolator(self.eval_points)[:, self.charge_idx].T)
     
     
     def load_interpolators(self, fname):
         
         data = np.load(fname, allow_pickle=False)
         
-        self.charges_output = data['charges']
+        self.all_charges_output = data['charges_output']
         self.d_m_bounds = data['d_m_bounds']
         self.pos_ion_mobility_bounds = data['pos_ion_mobility_bounds']
         self.neg_ion_mobility_bounds = data['neg_ion_mobility_bounds']
         
-        # Create one interpolator per charge
-        self.interpolator = [ [] for _ in range(self.charges_output.shape[0])]
-        
-        # Construct the interpolator objects, separately for each charge
         # For numerical reasons, scale all inputs to approximately [-10, 10]
-        log_diam = np.log10(data['d_m_eval'])
-        scaled_pos_mob = data['pos_ion_mobility_eval'] * 1e4
-        scaled_neg_mob = data['neg_ion_mobility_eval'] * 1e4
+        log_diam = np.log10(data['d_m_eval']).astype(np.float32)
+        scaled_pos_mob = (data['pos_ion_mobility_eval'] * 1e4).astype(np.float32)
+        scaled_neg_mob = (data['neg_ion_mobility_eval'] * 1e4).astype(np.float32)
         
-        # Construct the interpolator based on the saved values
-        for i in range(self.charges_output.shape[0]):
-            self.interpolator[i] = RegularGridInterpolator(
-                (log_diam, scaled_pos_mob, scaled_neg_mob),
-                data['log10_values'][i],
-                method='cubic'
-                )
+        eps = np.finfo(data['charge_probabilities'].dtype).tiny
+        log_charge_probabilities = np.log10(np.clip(data['charge_probabilities'], eps, None))
+        
+        # Move the charge dimension last for RegularGridInterpolator
+        values = np.moveaxis(log_charge_probabilities, 0, -1)
+        
+        # Construct the interpolator based on the precomputed values
+        self.interpolator = RegularGridInterpolator(
+            (log_diam, scaled_pos_mob, scaled_neg_mob),
+            values,
+            # method='pchip'  # NOTE: this is more accurate than the default, but slow
+            )
 
 
 class LYFFluxInterpolator:
@@ -723,127 +774,45 @@ class LYFFluxInterpolator:
     
     def __init__(self, saved_interpolator_file=None):
         
-        if saved_interpolator_file:
-            self.load_interpolators(saved_interpolator_file)
-        else:
-            self.flux_coeffs = None
-            self.interpolator = None
-    
-    
-    def construct_interpolators(self, parameter_bounds=None):
-        
-        max_considered_charge = 25
-        
-        self.charges_output = np.arange(-max_considered_charge, max_considered_charge+1)
-        
-        if parameter_bounds is None:
-            parameter_bounds = {
-                'min_d_m' : 1e-9,  # m
-                'max_d_m' : 2500e-9,
-                'min_pos_ion_mobility' : 1.05e-4,  # m^2 V^-1 s^-1
-                'max_pos_ion_mobility' : 1.70e-4,
-                'min_neg_ion_mobility' : 1.05e-4,
-                'max_neg_ion_mobility' : 2.10e-4,
-                }
-        
-        self.n_charges = self.charges_output.shape[0]
-        
-        self.d_m_bounds = np.array([parameter_bounds['min_d_m'],
-                                    parameter_bounds['max_d_m']])
-        self.pos_ion_mobility_bounds = np.array([parameter_bounds['min_pos_ion_mobility'],
-                                                 parameter_bounds['max_pos_ion_mobility']])
-        self.neg_ion_mobility_bounds = np.array([parameter_bounds['min_neg_ion_mobility'],
-                                                 parameter_bounds['max_neg_ion_mobility']])
-        
-        self.n_d_m = 30
-        self.n_mob = 10
-        self.d_m = np.geomspace(self.d_m_bounds[0], self.d_m_bounds[1], self.n_d_m)
-        self.pos_ion_mobility = np.linspace(self.pos_ion_mobility_bounds[0],
-                                            self.pos_ion_mobility_bounds[1], self.n_mob)
-        self.neg_ion_mobility = np.linspace(self.neg_ion_mobility_bounds[0],
-                                            self.neg_ion_mobility_bounds[1],self.n_mob)
-        
-        self.charging_model = LYFChargingModel(self.d_m / 2,
-                                               self.charges_output,
-                                               max_considered_charge=max_considered_charge
-                                               )
-        
-        # Multiple tqdm progress bars don't work with some IDEs, so disable the charging model one
-        self.charging_model.show_progressbar = False
-        
-        # (nmbr of ion charges (2), nmbr of charges, nmbr of particle sizes, nmbrs of mobilities)
-        self.flux_coeffs = np.zeros((2, self.n_charges, self.n_d_m, self.n_mob, self.n_mob))
-        
-        pbar = tqdm(position=0, desc='Creating interpolators')
-        pbar.reset(total = self.n_mob * self.n_mob)
-        for i, pos_ion_mob in enumerate(self.pos_ion_mobility):
-            for j, neg_ion_mob in enumerate(self.neg_ion_mobility):
-                self.charging_model.update_ion_parameters(pos_ion_mob, neg_ion_mob)
-                self.flux_coeffs[:, :, :, i, j] = \
-                    self.charging_model.compute_average_flux_coefficients()
-                
-                pbar.update(1)
-        
-        pbar.refresh()
+        self.load_interpolators(saved_interpolator_file)
     
     
     def __call__(self, d_m, pos_mobility, neg_mobility):
-        ''' Evaluate the charging probabilities for the given input parameters.
+        ''' Evaluate the ion flux coefficients for the given input parameters.
         The input d_m can be a vector.
         '''
         
         # scale
-        log_diam = np.log10(d_m)
         scaled_pos_mob = pos_mobility * 1e4
         scaled_neg_mob = neg_mobility * 1e4
         
+        eval_points = np.zeros((d_m.shape[0], 3))
+        eval_points[:, 0] = np.log10(d_m)
+        eval_points[:, 1] = scaled_pos_mob
+        eval_points[:, 2] = scaled_neg_mob
+        
+        
         average_flux_coefficients = np.zeros((2, self.n_charges, d_m.shape[0]))
-        for idx in range(self.n_charges):
-            average_flux_coefficients[0, idx] = self.interpolator[0][idx](
-                (log_diam, scaled_pos_mob, scaled_neg_mob)
-                )
-            average_flux_coefficients[1, idx] = self.interpolator[1][idx](
-                (log_diam, scaled_pos_mob, scaled_neg_mob)
-                )
+        
+        average_flux_coefficients[0] = self.interpolator_neg_ion(eval_points).T
+        average_flux_coefficients[1] = self.interpolator_pos_ion(eval_points).T
+        
         
         return 10**average_flux_coefficients
-    
-    
-    def save_interpolators(self, fname):
-        
-        if self.flux_coeffs is None:
-            raise ValueError('Calculate the interpolator values first.')
-        
-        np.savez(fname,
-                 allow_pickle=False,
-                 charges=self.charges_output,
-                 d_m_bounds=self.d_m_bounds,
-                 pos_ion_mobility_bounds=self.pos_ion_mobility_bounds,
-                 neg_ion_mobility_bounds=self.neg_ion_mobility_bounds,
-                 d_m_eval=self.d_m,
-                 pos_ion_mobility_eval=self.pos_ion_mobility,
-                 neg_ion_mobility_eval=self.neg_ion_mobility,
-                 flux_coeffs=self.flux_coeffs,
-                 )
     
     
     def load_interpolators(self, fname):
         
         data = np.load(fname, allow_pickle=False)
         
-        self.charges_output = data['charges']
-        self.n_charges = self.charges_output.shape[0]
-        self.max_considered_charge = self.charges_output[-1]
+        self.charges_modelled = data['charges_modelled']
+        self.n_charges = self.charges_modelled.shape[0]
+        self.max_modelled_charge = self.charges_modelled[-1]
         
         self.d_m_bounds = data['d_m_bounds']
         self.pos_ion_mobility_bounds = data['pos_ion_mobility_bounds']
         self.neg_ion_mobility_bounds = data['neg_ion_mobility_bounds']
         
-        # Create one interpolator per charge and ion sign
-        self.interpolator_neg_ion = [ [] for _ in range(self.n_charges)]
-        self.interpolator_pos_ion = [ [] for _ in range(self.n_charges)]
-        
-        # Construct the interpolator objects, separately for each charge
         # For numerical reasons, scale all inputs to approximately [-10, 10]
         log_diam = np.log10(data['d_m_eval'])
         scaled_pos_mob = data['pos_ion_mobility_eval'] * 1e4
@@ -852,19 +821,19 @@ class LYFFluxInterpolator:
         eps = np.finfo(data['flux_coeffs'].dtype).tiny
         log_flux_coeffs = np.log10(np.clip(data['flux_coeffs'], eps, None))
         
-        # Construct the interpolator based on the saved values
-        for i in range(self.n_charges):
-            self.interpolator_neg_ion[i] = RegularGridInterpolator(
-                (log_diam, scaled_pos_mob, scaled_neg_mob),
-                log_flux_coeffs[0, i]
-                )
-            self.interpolator_pos_ion[i] = RegularGridInterpolator(
-                (log_diam, scaled_pos_mob, scaled_neg_mob),
-                log_flux_coeffs[1, i]
-                )
-        
-        self.interpolator = (self.interpolator_neg_ion, self.interpolator_pos_ion)
+        # Move the charge dimension last for RegularGridInterpolator
+        values_neg = np.moveaxis(log_flux_coeffs[0], 0, -1)
+        values_pos = np.moveaxis(log_flux_coeffs[1], 0, -1)
 
+        # Construct the interpolator based on the saved values
+        self.interpolator_neg_ion = RegularGridInterpolator(
+            (log_diam, scaled_pos_mob, scaled_neg_mob),
+            values_neg,
+            )
+        self.interpolator_pos_ion = RegularGridInterpolator(
+            (log_diam, scaled_pos_mob, scaled_neg_mob),
+            values_pos,
+            )
 
 
 class WiedensohlerChargingModel:
@@ -931,25 +900,23 @@ class WiedensohlerChargingModel:
 class ChargingModelWrapper:
     ''' A wrapper class for the charging models to make the DMPS class pickleable. '''
     
-    def __init__(self, model_name, charger, d_m=None, charges=None):
+    def __init__(self, model_name, charger):
         
         self.model_name = model_name
         self.charger = charger
-        self.d_m = d_m
-        self.charges = charges
-
-    def __call__(self, *args):
         
-        expected_args = {
+        self.expected_args = {
             'Wiedensohler': 0,
             'LYF-direct': 3,
             'LYF-interp-flux': 3,
             'LYF-interp': 2
         }
 
-        if len(args) != expected_args[self.model_name]:
+    def __call__(self, *args):
+        
+        if len(args) != self.expected_args[self.model_name]:
             raise TypeError(
-                f"{self.model_name} expects {expected_args[self.model_name]} arguments, " + 
+                f"{self.model_name} expects {self.expected_args[self.model_name]} arguments, " + 
                 f"got {len(args)}"
             )
 
@@ -960,5 +927,4 @@ class ChargingModelWrapper:
             return self.charger.charging_probability(*args)
 
         elif self.model_name == 'LYF-interp':
-            pos_ion_mobility, neg_ion_mobility = args
-            return self.charger(self.d_m, pos_ion_mobility, neg_ion_mobility, self.charges)
+            return self.charger.charging_probability(*args)

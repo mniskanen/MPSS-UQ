@@ -12,91 +12,72 @@ from MPSS_UQ.chargingmodels import LYFChargingModel, LYFInterpolator, LYFFluxInt
 
 def test_interpolation_accuracy():
     
-    d_m = np.geomspace(1e-9, 1e-6, 32)
+    n_bins = 35
+    
+    d_m = np.geomspace(1e-9, 2.5e-6, n_bins)
     charges_output = np.arange(-8, 8 + 1)
-    # charges_output = np.arange(-25, 25 + 1)
+    n_charges = charges_output.shape[0]
     
-    charger_direct = LYFChargingModel(d_m / 2,
-                                      charges_output,
-                                      max_considered_charge=25
-                                      )
-    
-    # Compute charging probability using the flux interpolator
-    fname = resources.files('MPSS_UQ.data') / 'ion_flux_interpolator_data.npz'
+    # Initialize the different charger models
+    fname = resources.files('MPSS_UQ.data') / 'LYF_interpolator_data.npz'
     flux_interpolator = LYFFluxInterpolator(fname)
     charger_flux_interpolator = LYFChargingModel(d_m / 2,
                                                  charges_output,
                                                  flux_interpolator=flux_interpolator
                                                  )
+    charger_interpolator = LYFInterpolator(d_m / 2,
+                                           charges_output,
+                                           fname,
+                                           )
+    charger_direct = LYFChargingModel(d_m / 2,
+                                      charges_output,
+                                      max_modelled_charge=25
+                                      )
     
-    # Compute charging probability with 'direct' interpolation
-    fname = resources.files('MPSS_UQ.data') / 'charging_prob_interpolator_data.npz'
-    charger_interpolator = LYFInterpolator(fname)
-    
-    n_tests = 1  # 10
+    n_tests = 10
     time_direct = 0
     time_interp_1 = 0
     time_interp_2 = 0
-    for _ in tqdm(range(n_tests)):
+    rel_errors_1 = np.zeros(n_tests * charges_output.shape[0] * d_m.shape[0])
+    rel_errors_2 = np.zeros_like(rel_errors_1)
+    for test in tqdm(range(n_tests)):
         
         # Choose test parameters
         while True:
-            pos_ion_mobility = np.random.uniform(low=1.05e-4, high=1.70e-4)  # 1.20e-4
-            neg_ion_mobility = np.random.uniform(low=1.05e-4, high=2.10e-4)  # 1.35e-4
+            pos_ion_mobility = np.random.uniform(low=1.05e-4, high=1.70e-4)
+            neg_ion_mobility = np.random.uniform(low=1.10e-4, high=2.10e-4)
             ion_ratio = 1#np.random.normal(loc=1.0, scale=0.2/2)
             
             if pos_ion_mobility < neg_ion_mobility:
                 break
         
-        # Run the direct model
         t1 = perf_counter()
-        cp_direct = charger_direct.charging_probability(pos_ion_mobility,
-                                                        neg_ion_mobility,
-                                                        ion_ratio,
-                                                        )
-        t2 = perf_counter()
         
-        # Run the flux interpolation model
+        # Run the flux interpolator
         cp_interp_1 = charger_flux_interpolator.charging_probability(pos_ion_mobility,
                                                                      neg_ion_mobility,
                                                                      ion_ratio,
                                                                      )
-        t3 = perf_counter()
+        t2 = perf_counter()
         
-        # Run the 'direct' interpolator
-        cp_interp_2 = charger_interpolator(d_m,
-                                           pos_ion_mobility,
-                                           neg_ion_mobility,
-                                           charges_output
-                                           )
+        # Run the charging probability interpolator
+        cp_interp_2 = charger_interpolator.charging_probability(pos_ion_mobility,
+                                                                neg_ion_mobility,
+                                                                )
+        t3 = perf_counter()        
+        
+        # Run the direct model
+        cp_direct = charger_direct.charging_probability(pos_ion_mobility,
+                                                        neg_ion_mobility,
+                                                        ion_ratio,
+                                                        )
         t4 = perf_counter()
         
-        time_direct += t2 - t1
-        time_interp_1 += t3 - t2
-        time_interp_2 += t4 - t3
+        time_interp_1 += t2 - t1
+        time_interp_2 += t3 - t2
+        time_direct += t4 - t3
         
-        # Calculate the errors
-        rel_error_1 = 0
-        rel_error_2 = 0
-        mean_abs_error_1 = 0
-        mean_abs_error_2 = 0
-        for i in range(charges_output.shape[0]):
-            rel_error_1 += \
-                np.linalg.norm(cp_direct[i] - cp_interp_1[i]) / np.linalg.norm(cp_direct[i])
-            rel_error_2 += \
-                np.linalg.norm(cp_direct[i] - cp_interp_2[i]) / np.linalg.norm(cp_direct[i])
-            mean_abs_error_1 += np.mean(np.abs(cp_direct[i] - cp_interp_1[i]))
-            mean_abs_error_2 += np.mean(np.abs(cp_direct[i] - cp_interp_2[i]))
-        avg_rel_error_1 = rel_error_1 / charges_output.shape[0]
-        avg_rel_error_2 = rel_error_2 / charges_output.shape[0]
-        avg_mean_abs_error_1 = mean_abs_error_1 / charges_output.shape[0]
-        avg_mean_abs_error_2 = mean_abs_error_2 / charges_output.shape[0]
-        print(f'\nAverage relative error (flux interp): {avg_rel_error_1 * 100 : .2g} %')
-        print(f'\nAverage relative error (cp interp): {avg_rel_error_2 * 100 : .2g} %')
-        print(f'Average mean absolute error (flux interp): {avg_mean_abs_error_1 * 100 : .2g} %\n')
-        print(f'Average mean absolute error (cp interp): {avg_mean_abs_error_2 * 100 : .2g} %\n')
-        
-        # plot to compare charged fractions
+        # Plots to compare charged fractions
         plt.figure(num=3), plt.clf()
         plt.title('Steady-state charge distribution, flux interpolator')
         plt.xlabel('Particle diameter (m)')
@@ -139,10 +120,28 @@ def test_interpolation_accuracy():
         plt.legend()
         plt.pause(0.1)
         
-        assert avg_mean_abs_error_1 < 1e-3, \
-            'Average mean absolute error between direct and flux-interpolated solutions too large'
-        assert avg_mean_abs_error_2 < 1e-3, \
-            'Average mean absolute error between direct and cp-interpolated solutions too large'
+        # Calculate the relative errors
+        eps = 1e-9
+        for i in range(n_charges):
+            denom = np.abs(cp_direct[i]) + eps
+            offset = (test * n_charges + i) * n_bins
+
+            rel_errors_1[offset : offset + n_bins] = np.abs(cp_direct[i] - cp_interp_1[i]) / denom
+            rel_errors_2[offset : offset + n_bins] = np.abs(cp_direct[i] - cp_interp_2[i]) / denom
+    
+    p99_rel_error_1 = np.quantile(rel_errors_1, 0.99)   # 99th percentile
+    p99_rel_error_2 = np.quantile(rel_errors_2, 0.99)
+    avg_rel_error_1 = np.mean(rel_errors_1)
+    avg_rel_error_2 = np.mean(rel_errors_2)
+    print(f'\nAverage relative error (flux interp): {avg_rel_error_1 * 100 : .2g} %')
+    print(f'Average relative error (cp interp): {avg_rel_error_2 * 100 : .2g} %')
+    print(f'99th perc. relative error (flux interp): {p99_rel_error_1 * 100 : .2g} %')
+    print(f'99th perc. relative error (cp interp): {p99_rel_error_2 * 100 : .2g} %\n')
+    
+    assert avg_rel_error_1 < 0.05, \
+        'Average mean absolute error between direct and flux-interpolated solutions too large'
+    assert avg_rel_error_2 < 0.05, \
+        'Average mean absolute error between direct and cp-interpolated solutions too large'
     
     print(
         f'\nTimings for direct model: {time_direct : .2e} s, ' + 

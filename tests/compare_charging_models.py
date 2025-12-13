@@ -14,7 +14,7 @@ charges_output = np.array([-5, -2, -1, 0, 1, 2, 5])
 
 W_cp = WiedensohlerChargingModel(particle_radius, charges_output).charging_probability()
 
-fname = resources.files('MPSS_UQ.data') / 'interpolator_flux_60dm_307'
+fname = resources.files('MPSS_UQ.data') / 'LYF_interpolator_data.npz'
 flux_interpolator = LYFFluxInterpolator(fname)
 LYF_charging_model = LYFChargingModel(particle_radius, charges_output,
                                       flux_interpolator=flux_interpolator
@@ -27,7 +27,7 @@ LYF_cp = LYF_charging_model.charging_probability(1.2e-4,
 
 t2 = time.perf_counter()
 total_time = t2 - t1
-print(f'\nComputation took {total_time : .3f} seconds')
+print(f'\nComputation took {total_time *1e3 : .3f} milliseconds')
 
 #%%
 # Plot
