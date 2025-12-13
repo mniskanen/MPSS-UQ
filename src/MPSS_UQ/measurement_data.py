@@ -37,8 +37,15 @@ class Measurement:
                 warnings.warn( "Observed negative counts. Clipping them to zero for noise " +
                               "estimation purposes.", UserWarning)
             
+            # Poisson (counting) noise
             self.noise_cov = np.clip(self.output, 0, np.inf).astype(np.float64)
-            self.noise_cov += (2 + np.clip(self.output, 0, np.inf) * 0.01)**2
+            
+            # Noise linearly dependent on concentration
+            self.noise_cov += (0.01 * np.clip(self.output, 0, np.inf))**2
+            
+            # Background noise
+            self.noise_cov += 2**2
+            
             self.inv_noise_cov = 1 / self.noise_cov
             
             # Square root of the inverse noise covariance
