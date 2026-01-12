@@ -104,11 +104,15 @@ def generate_DMPS_measurement(DMPS_prop,
                               scenario,
                               pos_ion_mobility=1.35e-4,
                               neg_ion_mobility=1.60e-4,
+                              rng_seed=None,
                               ):
     ''' Simulate measurement data using a DMPS model.
     Input:
         DMPS_prop - the DMPS properties dictionary
         scenario - name of the true PSD we simulate
+        pos_ion_mobility : mobility of the positive ions for generating data
+        neg_ion_mobility : mobility of the negative ions for generating data
+        rng_seed : set the seed for the rng for reproducible results
     Predefined PSD scenarios are:
         Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert.
     '''
@@ -120,7 +124,7 @@ def generate_DMPS_measurement(DMPS_prop,
     DMPS_prop['charging_model'] = 'LYF-interp'
 
     # Maximum considered number of multiple charges
-    DMPS_prop['max_charge'] = 8
+    DMPS_prop['max_charge'] = 10
 
     # Create the data generating DMPS object
     DMPS = DifferentialMobilityParticleSizer(DMPS_prop, inversion_grid=d_m)
@@ -135,7 +139,7 @@ def generate_DMPS_measurement(DMPS_prop,
     DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
     
     # from MPSS_UQ.plotfunctions import plot_system_matrix
-    # plot_system_matrix(DMPS, title='data generation')
+    # plot_system_matrix(DMPS, title='data generation', num=10)
     
     # Generate a synthetic particle size distribution (based on Seinfeld & Pandis Table 8.3)
     # Define parameters for each scenario, these define a sum of three lognormal modes
@@ -199,7 +203,7 @@ def generate_DMPS_measurement(DMPS_prop,
     DMPS_output_noiseless = DMPS.forward_model(np.log10(N_true))
     
     # Add noise
-    rng = np.random.default_rng()#seed=1)
+    rng = np.random.default_rng(seed=rng_seed)
     DMPS_output = rng.poisson(lam=DMPS_output_noiseless).astype(np.float64)
     noise_std = 2 + 0.01 * DMPS_output_noiseless
     DMPS_output += noise_std * rng.normal(loc=0.0, scale=1.0,
