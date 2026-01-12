@@ -3,8 +3,6 @@
 import numpy as np
 
 from scipy.linalg import toeplitz
-from scipy.stats import norm
-from tqdm import tqdm
 
 from MPSS_UQ.inversion_results import InversionResult
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
@@ -156,7 +154,7 @@ def Laplace_approximation(
     if use_inversion_lemma:
         JQ = J @ prior['covariance']
         S = JQ @ J.T
-        S[np.diag_indices_from((S))] += measurement.noise_cov
+        S[np.diag_indices_from(S)] += measurement.noise_cov
         posterior_covariance = prior['covariance'] \
             - JQ.T @ np.linalg.inv(S) @ JQ
     else:
@@ -192,7 +190,7 @@ def Laplace_approximation(
         if use_inversion_lemma:
             JQ = J @ prior['covariance']
             S = JQ @ J.T
-            S[np.diag_indices_from((S))] += measurement.noise_cov
+            S[np.diag_indices_from(S)] += measurement.noise_cov
             posterior_covariance = prior['covariance'] \
                 - JQ.T @ np.linalg.inv(S) @ JQ
         else:
@@ -274,10 +272,8 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
         print('Nothing to marginalize')
         return
     
-    MAP_estimates_log10 = np.zeros((n_invert, n_bins))
-    posterior_cov_Ls_log10 = np.zeros((n_invert, n_bins, n_bins))
-    log_posts = np.zeros((n_gridpoints_pos, n_gridpoints_neg))
     ion_properties = np.zeros((n_invert, 3))
+    inversion_results = []
     
     # Starting guess for the Laplace approximation
     N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
@@ -300,11 +296,14 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
                     sizer.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
                 
                 # Calculate the Laplace approximation
-                MAP_estimates_log10[i], posterior_cov_Ls_log10[i] = Laplace_approximation(
-                    sizer,
-                    prior,
-                    measurement,
-                    N_start=N_guess,
+                MAP_estimate_log10, posterior_cov_L_log10 = Laplace_approximation(
+                    sizer, prior, measurement, N_start=N_guess,
+                    )
+                inversion_results.append(
+                    InversionResult(sizer.d_m,
+                                    post_mean_log10=MAP_estimate_log10,
+                                    post_covL_log10=posterior_cov_L_log10,
+                                    )
                     )
                 
                 # Store ion properties
@@ -312,15 +311,12 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
                 
                 # Use the current MAP estimate as a starting guess for the next one
                 # (it _probably_ is quite close to the truth)
-                N_guess = MAP_estimates_log10[i]
+                N_guess = MAP_estimate_log10
                 
                 i += 1
     
-    # Possibly different probability for each mixture
+    # The same probability for each mixture
     mixtures = np.arange(n_invert)
-    log_posts_notnan = log_posts.flatten()
-    log_posts_notnan = np.delete(log_posts_notnan, np.isnan(log_posts_notnan))
-    
     mixture_probabilities = np.ones(mixtures.shape[0])
     mixture_probabilities /= np.sum(mixture_probabilities)
     
@@ -341,21 +337,14 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
     counts += extra_counts
     
     # Then sample each component in batches
-    posterior_mixture_samples = np.zeros((num_samples, n_bins),
-                                         dtype=np.float32
-                                         )
+    posterior_mixture_samples = np.zeros((num_samples, n_bins))
     ion_property_samples = np.zeros((num_samples, 3))
     start = 0
     for comp_idx, count in enumerate(counts):
         if count == 0:
             continue
-        posterior_mixture_samples[start:start+count] = np.power(10,
-            MAP_estimates_log10[comp_idx][:, None]
-            + posterior_cov_Ls_log10[comp_idx] @ rng.normal(loc=0.0,
-                                                            scale=1.0,
-                                                            size=(n_bins, count)
-                                                            )
-            ).T
+        posterior_mixture_samples[start:start+count] = \
+            inversion_results[comp_idx].draw_posterior_samples(num=count)
         
         # Store the ion properties of each sample
         ion_property_samples[start:start+count] = ion_properties[comp_idx]
