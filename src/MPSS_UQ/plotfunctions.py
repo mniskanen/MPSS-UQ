@@ -58,7 +58,7 @@ def plot_system_matrix(DMPS, num=None, title=None):
     else:
         title = f', {title}'  # add a comma
     
-    plt.figure(num=num), plt.clf()
+    plt.figure(num=num, clear=True)
     X, Y = np.meshgrid(DMPS.d_m * 1e9, DMPS.d_m_data * 1e9)
     
     plt.pcolormesh(X, Y, DMPS.system_matrix)
@@ -121,7 +121,7 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
     elif result.input_mode == 'gaussian-log10':
         for i in range(n_samples):
             output_predicted_samples[i] = DMPS.forward_model(
-                np.log10(result.get_posterior_sample())
+                np.log10(result.draw_posterior_samples(num=1).squeeze())
                 )
     else:
         raise ValueError('Unknown result input mode.')

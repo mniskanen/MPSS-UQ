@@ -6,7 +6,6 @@ Classes for storing and processing inversion results from MPSS data.
 
 import numpy as np
 from scipy.stats import norm
-# import scipy.stats
 
 
 def highest_density_interval(samples, percentage):
@@ -46,13 +45,13 @@ class InversionResult:
     
     Parameters
     ----------
-    d_m_full : 
-    sl_measured : slice
+    d_m_full : the diameters of the whole inverted PSD range
+    sl_measured : slice, defaults to slice(None), the whole range, if not provided
         A slice indicating the start and stop indices of d_m_full that corresponds to the
         measured size range.
-    post_mean_log10 : None,
-    post_cov_log10 : None,
-    post_samples : None,
+    post_mean_log10 : the posterior mean (in log10)
+    post_covL_log10 : the Cholesky factor of the posterior covariance (in log10)
+    post_samples : posterior samples
     ion_property_samples : array of floats or None, optional
         Values of the positive and negative ion mobility and ion ratio at each post_sample.
     reporting_range : 'measured' or 'full'
@@ -64,7 +63,7 @@ class InversionResult:
     
     def __init__(self,
                  d_m_full,
-                 sl_measured,
+                 sl_measured : slice = slice(None),
                  post_mean_log10=None,
                  post_covL_log10=None,
                  post_samples=None,
@@ -124,10 +123,6 @@ class InversionResult:
         
         else:
             raise ValueError("Unknown reporting range. Use 'measured' or 'full'.")
-        
-        # Reset the Cholesky decompositions of the post covariance
-        if self.input_mode == 'gaussian-log10':
-            self.cov_log10_cholesky = None
     
     
     def _postprocess_results_from_covariance_log10(self, CI):
@@ -216,16 +211,16 @@ class InversionResult:
             return Ntot_samples
     
     
-    def get_posterior_sample(self):
-        ''' Return one sample from the posterior.
+    def draw_posterior_samples(self, num=1):
+        ''' Draw posterior samples from the Gaussian approximation.
         Can only be used for the input mode 'gaussian-log10'.
         '''
         
         if self.input_mode == 'gaussian-log10':
-            return 10**(self.post_mean_log10[self.sl] 
+            return np.exp((self.post_mean_log10[self.sl, None]
                         + self.post_covL_log10[self.sl, self.sl]
-                        @ self.rng.normal(loc=0.0, scale=1.0, size=len(self.d_m))
-                        )
+                        @ self.rng.normal(loc=0.0, scale=1.0, size=(len(self.d_m), num))
+                        ) * np.log(10)).T
         
         else:
             raise ValueError("Posterior samples for input_mode=='samples' are found in " +
