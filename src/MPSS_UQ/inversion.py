@@ -28,14 +28,24 @@ def invert_psd(
         prior=None,   # If None, builds a default smoothness prior
         marginalize_ion_mobility=False,
         marginalize_ion_ratio=False,
-        num_samples=5000,
+        num_samples=None,
+        sample_posterior=False,
         ):
-    ''' Estimate the particle size distribution (PSD) from an MPSS measurement and
-    return an InversionResult containing posterior summaries or samples.
-    Marginalization can be carried over over a range of ion mobilities and ratios using
-    the LYF model.
-    num_samples is the number of posterior samples returned when doing marginalization.
+    ''' Estimate the particle size distribution (PSD) from an MPSS measurement.
+    
+    With no marginalization, the posterior is approximated by the Laplace approximation
+    (MAP + covariance). Optionally, one can set sample_posterior to True which carries out
+    MCMC sampling and returns the samples.
+    
+    Marginalization is carried over over a range of ion mobilities and ratios using
+    the LYF model. When doing marginalization, the posterior is approximated as a mixture of
+    Gaussians (Laplace approximations) and samples from the mixture are returned.
+    
+    num_samples is the number of posterior samples returned when using sampling methods.
+    
+    Returns an InversionResult containing either the Laplace approximation or posterior samples.
     '''
+    
     # Calculate the measured reporting_range:
     eps = 1e-16
     lo = sizer.d_m_data.min() - eps
@@ -53,15 +63,14 @@ def invert_psd(
     if prior is None:
         prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
     
-    if marginalize_ion_mobility is False and marginalize_ion_ratio is False:
-        MAP, post_cov_L = Laplace_approximation(sizer, prior, measurement)
-        return InversionResult(sizer.d_m,
-                               sl_measured,
-                               post_mean_log10=MAP,
-                               post_covL_log10=post_cov_L,
-                               )
-    
-    else:
+    if marginalize_ion_mobility is True or marginalize_ion_ratio is True:
+        if sample_posterior is True:
+            raise ValueError('Cannot carry out MCMC with posterior marginalization. ' +
+                             'Set sample_posterior to False.')
+        
+        if num_samples is None:
+            num_samples = 5000
+        
         posterior_samples, ion_property_samples = Laplace_approximation_marginalize(
             sizer, prior, measurement,
             marginalize_ion_mobility,
@@ -73,6 +82,23 @@ def invert_psd(
                                post_samples=posterior_samples,
                                ion_property_samples=ion_property_samples,
                                )
+    else:
+        if sample_posterior:
+            # MCMC
+            if num_samples is None:
+                num_samples = 100000
+                
+            posterior_samples = run_mcmc(sizer, prior, measurement, num_samples=num_samples)
+            return InversionResult(sizer.d_m, sl_measured, post_samples=posterior_samples)
+        
+        else:
+            # Laplace approximation
+            MAP, post_cov_L = Laplace_approximation(sizer, prior, measurement)
+            return InversionResult(sizer.d_m,
+                                   sl_measured,
+                                   post_mean_log10=MAP,
+                                   post_covL_log10=post_cov_L,
+                                   )
 
 
 def log_post(vals, sizer, L_noise, prior, y_meas):
@@ -396,3 +422,100 @@ def linesearch(fn, direction, N_0, previous_best_f_value, *args):
         min_step_reached = False
     
     return N_0 + dN_new, post_new, min_step_reached
+
+
+def rw_metropolis_preconditioned(
+    log_post_fn,
+    x_start,
+    L_cov,                # Cholesky of the proposal covariance
+    n_samples,
+    burn_in,
+    step_scale=1.0,       # Proposal scale factor
+    adapt_scale=True,     # Robbins–Monro adaptation of step_scale
+    target_acc=0.234,
+    ):
+    """
+    Random-Walk Metropolis in log10-space with proposal covariance proportional to Laplace covariance.
+
+    Returns:
+        samples      : (n_samples, p) array of draws from the posterior in x-space
+        acc_rate     : overall acceptance rate over the run (including burn-in)
+        logp_trace   : (n_samples,) log posterior values at saved samples
+        step_scale   : final step scale used
+    """
+    rng = np.random.default_rng()
+    p = x_start.shape[0]
+    L = np.array(L_cov, copy=True)
+
+    # Storage
+    samples = np.zeros((n_samples, p), dtype=float)
+    logp_trace = np.zeros(n_samples, dtype=float)
+
+    # Initialize
+    x_curr = np.array(x_start, copy=True)
+    logp_curr = float(log_post_fn(x_curr))
+    accepted = 0
+
+    if adapt_scale:
+        log_step = np.log(step_scale)
+    
+    total_iters = burn_in + n_samples
+    for it in range(total_iters):
+        # Proposal
+        z = rng.normal(size=p)
+        x_prop = x_curr + np.exp(log_step) * (L @ z)
+        logp_prop = float(log_post_fn(x_prop))
+        
+        log_alpha = logp_prop - logp_curr
+        if np.log(rng.uniform()) < log_alpha:
+            x_curr = x_prop
+            logp_curr = logp_prop
+            accepted += 1
+        
+        if adapt_scale:
+            a_t = min(1.0, float(np.exp(log_alpha)))
+            gamma = 1.0 / np.sqrt(it + 1.0)
+            log_step += gamma * (a_t - target_acc)
+        
+        # Save after burn-in
+        if it >= burn_in:
+            idx = it - burn_in
+            samples[idx] = x_curr
+            logp_trace[idx] = logp_curr
+    
+    acc_rate = accepted / total_iters
+    step_scale = np.exp(log_step)
+    
+    return samples, acc_rate, logp_trace, step_scale
+
+
+def run_mcmc(
+        sizer : DifferentialMobilityParticleSizer,
+        prior,
+        measurement,
+        num_samples=10000,
+        ):
+    ''' Sample the posterior with MCMC. Sampling is initialized from a Laplace approximation.
+    This function assumes a positivity constraint in the form of a log10 transformation,
+    and hence the returned values are given in log10-space.
+    '''
+    
+    # Initialize
+    MAP_estimate, posterior_cov_L = Laplace_approximation(sizer, prior, measurement)
+    
+    def log_post_fn(x):
+        return log_post(x, sizer, measurement.inv_noise_L, prior, measurement.output)
+    
+    # Run random walk Metropolis
+    samples_x, acc_rate, logp_vals, final_scale = rw_metropolis_preconditioned(
+        log_post_fn,
+        x_start=MAP_estimate,
+        L_cov=posterior_cov_L,
+        n_samples=num_samples,
+        burn_in=1000,
+        step_scale=1.0,
+        adapt_scale=True,
+        target_acc=0.234,
+    )
+    
+    return np.power(10, samples_x)
