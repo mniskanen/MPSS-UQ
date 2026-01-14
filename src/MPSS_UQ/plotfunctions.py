@@ -37,7 +37,12 @@ def plot_posterior_summary(ax, result, CI_coverage=95):
                     label=f'{CI_coverage} % credible interval'
                     )
     
-    plot_psd(ax, result.d_m, N=N_mean, linestyle='-', color='C0', label='Posterior mean')
+    if result.input_mode == 'gaussian-log10':
+        label = 'MAP estimate'
+    elif result.input_mode == 'samples':
+        label = 'Posterior mean estimate'
+    
+    plot_psd(ax, result.d_m, N=N_mean, linestyle='-', color='C0', label=label)
     
     ax.legend()
 

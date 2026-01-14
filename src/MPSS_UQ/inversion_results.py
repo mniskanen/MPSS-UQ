@@ -134,13 +134,17 @@ class InversionResult:
         
         CI_lower = 10**(self.post_mean_log10[self.sl] - k * sigma)
         CI_upper = 10**(self.post_mean_log10[self.sl] + k * sigma)
+        post_MAP = 10**(self.post_mean_log10[self.sl])
         
-        return 10**self.post_mean_log10[self.sl], CI_lower, CI_upper
+        return post_MAP, CI_lower, CI_upper
     
     
     def _postprocess_results_from_samples(self, CI):
         
-        post_mean = np.mean(self.post_samples[:, self.sl], axis=0)
+        # post_mean = np.mean(self.post_samples[:, self.sl], axis=0)
+        
+        # Calculate the geometric mean
+        post_geom_mean = np.exp(np.mean(np.log(self.post_samples[:, self.sl]), axis=0))
         
         # Highest density intervals
         CI_lower = np.zeros(self.d_m.shape[0])
@@ -148,7 +152,7 @@ class InversionResult:
         for j, i in enumerate(range(self.sl.start, self.sl.stop)):
             CI_lower[j], CI_upper[j] = highest_density_interval(self.post_samples[:, i], CI / 100)
             
-        return post_mean, CI_lower, CI_upper
+        return post_geom_mean, CI_lower, CI_upper
     
     
     def posterior_variance(self):
