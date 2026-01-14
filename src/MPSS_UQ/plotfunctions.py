@@ -86,7 +86,6 @@ def plot_system_matrix(DMPS, num=None, title=None):
 
 def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverage=95):
     # Data prediction
-    rng = np.random.default_rng()
     n_samples = 5000
     output_predicted_samples = np.zeros((n_samples, len(output_measured)))
     
@@ -98,6 +97,8 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
         result.set_reporting_range('full')
     
     if result.input_mode == 'samples':
+        # Limit the max number of samples to the max number available
+        n_samples = min(len(result.post_samples), 5000)
         
         def _update_ion_props(ion_properties):
             if DMPS.charging_model_name == 'LYF-interp':
@@ -110,14 +111,16 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
         # Evaluate the posterior samples model output in order so that we minimize the number
         # of times the charger properties need to be reset
         sample_idxs.sort()
-        ion_properties = result.ion_property_samples[sample_idxs[0]]
-        _update_ion_props(ion_properties)
+        if hasattr(result, 'ion_property_samples'):
+            ion_properties = result.ion_property_samples[sample_idxs[0]]
+            _update_ion_props(ion_properties)
         
         for i, sample_idx in enumerate(sample_idxs):
             # Check if ion properties changed, do we need to update DMPS
-            if np.any(ion_properties != result.ion_property_samples[sample_idx]):
-                ion_properties = result.ion_property_samples[sample_idx]
-                _update_ion_props(ion_properties)
+            if hasattr(result, 'ion_property_samples'):
+                if np.any(ion_properties != result.ion_property_samples[sample_idx]):
+                    ion_properties = result.ion_property_samples[sample_idx]
+                    _update_ion_props(ion_properties)
             
             output_predicted_samples[i] = DMPS.forward_model(
                 np.log10(result.post_samples[sample_idx])
