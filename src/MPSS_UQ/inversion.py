@@ -3,6 +3,7 @@
 import numpy as np
 
 from scipy.linalg import toeplitz
+from typing import Literal
 
 from MPSS_UQ.inversion_results import InversionResult
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
@@ -28,6 +29,7 @@ def invert_psd(
         prior=None,   # If None, builds a default smoothness prior
         marginalize_ion_mobility=False,
         marginalize_ion_ratio=False,
+        marginalization_grid : Literal['standard', 'fine'] = 'standard',
         num_samples=None,
         sample_posterior=False,
         ):
@@ -40,6 +42,11 @@ def invert_psd(
     Marginalization is carried over over a range of ion mobilities and ratios using
     the LYF model. When doing marginalization, the posterior is approximated as a mixture of
     Gaussians (Laplace approximations) and samples from the mixture are returned.
+    
+    marginalization_grid refers to how many mobility pairs are calculated when marginalizing.
+    marginalization_grid='fine' gives better looking Ntot histogram plots.
+    The posterior estimates and credible intervals are basically the same as with
+    marginalization_grid='standard', but marginalization_grid='standard' is faster.
     
     num_samples is the number of posterior samples returned when using sampling methods.
     
@@ -75,6 +82,7 @@ def invert_psd(
             sizer, prior, measurement,
             marginalize_ion_mobility,
             marginalize_ion_ratio,
+            marginalization_grid=marginalization_grid,
             num_samples=num_samples,
             )
         return InversionResult(sizer.d_m,
@@ -236,6 +244,7 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
                                       measurement,
                                       marginalize_ion_mobility,
                                       marginalize_ion_ratio,
+                                      marginalization_grid : Literal['standard', 'fine'] = 'standard',
                                       num_samples=5000,
                                       ):
     
@@ -248,6 +257,7 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
         measurement : a dictionary with data on the measurement
         marginalize_ion_mobility : True/False
         marginalize_ion_ratio : True/False
+        marginalization_grid : 'standard' or 'fine', resolution of the marginalization grid
         num_samples : int
             Number of samples drawn from the posterior mixture.
     
@@ -265,20 +275,26 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
     n_bins = sizer.d_m.shape[0]
     
     if marginalize_ion_mobility:
-        n_gridpoints_pos = 25
-        n_gridpoints_neg = int(n_gridpoints_pos * 1.05 / 0.65)
-        n_invert = n_gridpoints_pos * n_gridpoints_neg
-        pos_ion_mobilities = np.linspace(1.05e-4, 1.70e-4, n_gridpoints_pos + 1)
-        neg_ion_mobilities = np.linspace(1.10e-4, 2.10e-4, n_gridpoints_neg + 1)
-    
-        # Midpoints
-        pos_ion_mobilities = pos_ion_mobilities[0:-1] \
-            + 0.5 * (pos_ion_mobilities[1] - pos_ion_mobilities[0])
-        neg_ion_mobilities = neg_ion_mobilities[0:-1] \
-            + 0.5 * (neg_ion_mobilities[1] - neg_ion_mobilities[0])
+        if marginalization_grid == 'standard':
+            step = 3.5e-6
+        elif marginalization_grid == 'fine':
+            step = 2.0e-6
+        else:
+            raise ValueError("marginalization_grid must be either 'standard' or 'fine'")
         
-        PP, NN = np.meshgrid(pos_ion_mobilities, neg_ion_mobilities, indexing='ij')
-        n_mobilities = np.sum(NN >= PP)
+        def make_axis(start, end, step):
+            span = end - start
+            n = int(span / step)  # base number of steps
+            # Add one more point if leftover > half step
+            if span - n * step > step / 2:
+                n += 1
+            return np.linspace(start, end, n + 1)
+        
+        pos_ion_mobilities = make_axis(1.05e-4, 1.70e-4, step)
+        neg_ion_mobilities = make_axis(1.10e-4, 2.10e-4, step)
+        
+        idxs = np.searchsorted(neg_ion_mobilities, pos_ion_mobilities, side='left')
+        n_mobilities = np.sum(len(neg_ion_mobilities) - idxs)  # nbr of valid mobility pairs
     
     else:
         pos_ion_mobilities = np.array([1.35e-4])

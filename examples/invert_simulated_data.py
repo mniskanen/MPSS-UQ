@@ -132,7 +132,8 @@ result_marg = invert_psd(DMPS_marg,
                          measurement,
                          prior,
                          marginalize_ion_mobility=True,
-                         num_samples=100000,  # more samples for cleaner plots
+                         num_samples=1000000,  # more samples for cleaner plots
+                         marginalization_grid='fine'  # for smoother Ntot plots
                          )
 
 
