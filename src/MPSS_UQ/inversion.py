@@ -281,31 +281,40 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
             step = 2.0e-6
         else:
             raise ValueError("marginalization_grid must be either 'standard' or 'fine'")
-        
-        def make_axis(start, end, step):
-            span = end - start
-            n = int(span / step)  # base number of steps
-            # Add one more point if leftover > half step
-            if span - n * step > step / 2:
-                n += 1
-            return np.linspace(start, end, n + 1)
-        
-        pos_ion_mobilities = make_axis(1.05e-4, 1.70e-4, step)
-        neg_ion_mobilities = make_axis(1.10e-4, 2.10e-4, step)
-        
-        idxs = np.searchsorted(neg_ion_mobilities, pos_ion_mobilities, side='left')
-        n_mobilities = np.sum(len(neg_ion_mobilities) - idxs)  # nbr of valid mobility pairs
-    
     else:
-        pos_ion_mobilities = np.array([1.35e-4])
-        neg_ion_mobilities = np.array([1.60e-4])
-        n_mobilities = 1
+        # Set a large step, make_axis will reduce this to fit one grid point exactly in the middle
+        # of the mobility trapezoid
+        step = 1
+    
+    def make_axis(start, end, step):
+        ''' Divide the range end - start into largest possible equal sized cells whose
+        width <= step.
+        Return the midpoints of those cells, and the final adjusted step size.
+        '''
+        span = end - start
+        n = int(np.ceil(span / step))
+        if n < 1:
+            raise ValueError('Step is too large. ' +
+                             f' Largest possible step is {np.floor(span / 2) : .3g}')
+        step = span / n  # Adjust the stepsize to the nearest smaller one that fits
+        
+        return start + step / 2 + step * np.arange(n), step
+    
+    pos_ion_mobilities, step_pos = make_axis(1.05e-4, 1.70e-4, step)
+    neg_ion_mobilities, step_neg = make_axis(1.10e-4, 2.10e-4, step)
+    
+    idxs = np.searchsorted(neg_ion_mobilities, pos_ion_mobilities, side='left')
+    n_mobilities = np.sum(len(neg_ion_mobilities) - idxs)  # nbr of valid mobility pairs
     
     if marginalize_ion_ratio:
+        if sizer.charging_model_name != 'LYF-interp-flux':
+            raise ValueError("To marginalize ion ratio the charger has to be 'LYF-interp-flux'")
         n_ion_ratios = 10
         ion_ratio_std = 0.2 / 2
         
     else:
+        if sizer.charging_model_name != 'LYF-interp':
+            raise ValueError("Use charger 'LYF-interp' for fastest marginalization of mobility")
         n_ion_ratios = 1
         ion_ratio = 1
     
@@ -315,6 +324,7 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
         return
     
     ion_properties = np.zeros((n_invert, 3))
+    mixture_weights = np.zeros(n_invert)
     inversion_results = []
     
     # Starting guess for the Laplace approximation
@@ -348,6 +358,10 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
                                     )
                     )
                 
+                # Calculate the (relative) weight of the current mixture component
+                mixture_weights[i] = calculate_area_of_cell(pos_ion_mobility, neg_ion_mobility,
+                                                            step_pos, step_neg)
+                
                 # Store ion properties
                 ion_properties[i] = pos_ion_mobility, neg_ion_mobility, ion_ratio
                 
@@ -357,25 +371,22 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
                 
                 i += 1
     
-    # The same probability for each mixture
-    mixtures = np.arange(n_invert)
-    mixture_probabilities = np.ones(mixtures.shape[0])
-    mixture_probabilities /= np.sum(mixture_probabilities)
+    mixture_weights /= np.sum(mixture_weights)
     
     # First calculate, proportional to mixture_probabilities, how many times
     # each mixture component should be sampled (counts)
-    counts = mixture_probabilities * num_samples
+    counts = mixture_weights * num_samples
     counts = np.floor(counts).astype(int)
     
     # The above rounds the number of counts down because they have to be integers.
     # Let's add in at random (but proportional to mixture_probabilities)
     # the missing numbers of counts using rng.choice()
     n_missing = num_samples - np.sum(counts)
-    extra_components = rng.choice(len(mixture_probabilities),
+    extra_components = rng.choice(len(mixture_weights),
                                   size=n_missing,
-                                  p=mixture_probabilities
+                                  p=mixture_weights
                                   )
-    extra_counts = np.bincount(extra_components, minlength=len(mixture_probabilities))
+    extra_counts = np.bincount(extra_components, minlength=len(mixture_weights))
     counts += extra_counts
     
     # Then sample each component in batches
@@ -394,6 +405,54 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
         start += count
     
     return posterior_mixture_samples, ion_property_samples
+
+
+def calculate_area_of_cell(x, y, step_x, step_y):
+    ''' Calculate the area of the midpoint cell inside the prior area, used in
+    the marginalization of the mobilities.
+    x = positive mobility
+    y = negative mobility
+    i.e., (x, y) is the cell midpoint
+    step = cell width in that direction
+    '''
+    full_area = step_x * step_y
+    
+    # Bottom-right corner
+    br_corner_x = x + step_x / 2
+    br_corner_y = y - step_y / 2
+    
+    # First test if the lower right corner of the cell is to the right of the diagonal
+    if br_corner_x > br_corner_y:
+        # Calculate clipped area. We have 3 possible cases
+        
+        bl_corner_x = x - step_x / 2
+        bl_corner_y = y - step_y / 2
+        # bottom left corner past the diagonal
+        if bl_corner_x > bl_corner_y:
+            a = br_corner_x - bl_corner_x
+            b = bl_corner_x - br_corner_y
+            c = br_corner_x - bl_corner_y
+            area_outside = a * b + 0.5 * a * c
+            return full_area - area_outside
+        
+        tr_corner_x = x + step_x / 2
+        tr_corner_y = y + step_y / 2
+        # top left corner past the diagonal
+        if tr_corner_x > tr_corner_y:
+            a = tr_corner_y - br_corner_y
+            b = br_corner_x - tr_corner_y
+            c = tr_corner_y - br_corner_y
+            area_outside = a * b + 0.5 * a * c
+            return full_area - area_outside
+        
+        # only bottom right past the diagonal
+        a = br_corner_x - br_corner_y
+        area_outside = 0.5 * a ** 2
+        return full_area - area_outside
+    
+    else:
+        # whole cell inside
+        return full_area
 
 
 def linesearch(fn, direction, N_0, previous_best_f_value, *args):
