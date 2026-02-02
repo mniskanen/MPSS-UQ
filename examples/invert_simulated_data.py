@@ -182,15 +182,17 @@ y0_min, y0_max = axs[0].get_ylim()
 y1_min, y1_max = axs[2].get_ylim()
 y_min = np.min((y0_min, y1_min))
 y_max = np.max((y0_max, y1_max))
-
 axs[0].set_ylim([y_min, y_max])
 axs[2].set_ylim([y_min, y_max])
 
 Ntot_true = compute_true_Ntot_in_range(measurement, result.d_m)
 Ntot_samples = result.Ntot_samples()
 Ntot_samples_marg = result_marg.Ntot_samples()
-xlimits = (min(np.min(Ntot_samples), np.min(Ntot_samples_marg)),
-           max(np.max(Ntot_samples), np.max(Ntot_samples_marg)))
+from MPSS_UQ.inversion_results import highest_density_interval
+[plt_lo, plt_hi] = highest_density_interval(Ntot_samples, 0.998)
+[plt_lo_marg, plt_hi_marg] = highest_density_interval(Ntot_samples_marg, 0.998)
+xlimits = (min(plt_lo, plt_lo_marg),
+           max(plt_hi, plt_hi_marg))
 plot_Ntot_histogram(axs[1], Ntot_samples, Ntot_true=Ntot_true, xlimits=xlimits)
 plot_Ntot_histogram(axs[3], Ntot_samples_marg, Ntot_true=Ntot_true, xlimits=xlimits)
 
@@ -208,3 +210,4 @@ plot_datafit(axs[0], DMPS_inv, measurement.output, result)
 plot_datafit(axs[1], DMPS_marg, measurement.output, result_marg)
 axs[0].set_title('Data fit, no marginalization')
 axs[1].set_title('Data fit, marginalized')
+fig.tight_layout()

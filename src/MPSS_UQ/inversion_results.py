@@ -188,19 +188,17 @@ class InversionResult:
     
     
     def _postprocess_results_from_samples(self, CI):
+        """ Calculate the posterior median and highest density interval at credible level CI
+        from the posterior samples of N.
+        """
+        post_median = np.median(self.post_samples[:, self.sl], axis=0)
         
-        # post_mean = np.mean(self.post_samples[:, self.sl], axis=0)
-        
-        # Calculate the geometric mean
-        post_geom_mean = np.exp(np.mean(np.log(self.post_samples[:, self.sl]), axis=0))
-        
-        # Highest density intervals
         CI_lower = np.zeros(self.d_m.shape[0])
         CI_upper = np.zeros_like(CI_lower)
         for j, i in enumerate(range(self.sl.start, self.sl.stop)):
             CI_lower[j], CI_upper[j] = highest_density_interval(self.post_samples[:, i], CI / 100)
             
-        return post_geom_mean, CI_lower, CI_upper
+        return post_median, CI_lower, CI_upper
     
     
     def posterior_variance(self):
@@ -214,7 +212,7 @@ class InversionResult:
     
     def posterior_summary(self, coverage=95):
         """
-        Returns the posterior mean and credible intervals.
+        Returns the posterior median and shortest credible intervals.
         Input:
             coverage - the percentage of the posterior mass the credible interval should cover.
         """
@@ -308,20 +306,20 @@ class InversionDataset:
     
     def posterior_summary(self, *args, **kwargs):
         """
-        Returns arrays of posterior mean, lower CI, upper CI for all results.
+        Returns arrays of posterior median, lower CI, upper CI for all results.
         """
         num_results = len(self.results)
         num_d_m = self.results[0].d_m.shape[0]
-        posterior_means = np.zeros((num_results, num_d_m))
-        CI_lower = np.zeros_like(posterior_means)
-        CI_upper = np.zeros_like(posterior_means)
+        posterior_medians = np.zeros((num_results, num_d_m))
+        CI_lower = np.zeros_like(posterior_medians)
+        CI_upper = np.zeros_like(posterior_medians)
         
         for i in range(num_results):
-            posterior_means[i], CI_lower[i], CI_upper[i] = self.results[i].posterior_summary(
+            posterior_medians[i], CI_lower[i], CI_upper[i] = self.results[i].posterior_summary(
                 *args, **kwargs
                 )
         
-        return posterior_means, CI_lower, CI_upper
+        return posterior_medians, CI_lower, CI_upper
     
     
     def set_reporting_range(self, reporting_range : str):

@@ -27,7 +27,7 @@ def plot_posterior_summary(ax, result, CI_coverage=95):
         CI_coverage - percentage of posterior the credible intervals should cover
     '''
     
-    N_mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
+    N_median, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
     
     ax.fill_between(result.d_m * 1e9,
                     CI_upper / result.binwidth,
@@ -37,12 +37,9 @@ def plot_posterior_summary(ax, result, CI_coverage=95):
                     label=f'{CI_coverage} % credible interval'
                     )
     
-    if result.input_mode == 'gaussian-log10':
-        label = 'MAP estimate'
-    elif result.input_mode == 'samples':
-        label = 'Posterior mean estimate'
+    label = 'Posterior median'
     
-    plot_psd(ax, result.d_m, N=N_mean, linestyle='-', color='C0', label=label)
+    plot_psd(ax, result.d_m, N=N_median, linestyle='-', color='C0', label=label)
     
     ax.legend()
 
@@ -138,14 +135,14 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
     if reporting_range == 'measured':
         result.set_reporting_range('measured')
     
+    output_predicted_median_noiseless = np.median(output_predicted_samples, axis=0)
+    
     # Add counting noise
     output_predicted_samples_noisy = rng.poisson(lam=output_predicted_samples).astype(np.float64)
     # Add additive noise (electronic/environmental)
     noise_std = 2 + 0.01 * output_predicted_samples
     output_predicted_samples_noisy += noise_std * rng.normal(loc=0.0, scale=1.0,
                                                              size=output_predicted_samples.shape)
-        
-    output_predicted_mean = np.mean(output_predicted_samples_noisy, axis=0)
     
     # Highest density intervals
     CI_lower = np.zeros(len(output_measured))
@@ -155,71 +152,21 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
                                                             CI_coverage / 100
                                                             )
     
-    ax.semilogx(DMPS.d_m_data * 1e9, output_measured, 'kx', label='Observed output')
+    ax.semilogx(DMPS.d_m_data * 1e9, output_measured, 'kx', label='Observed counts')
     ax.fill_between(DMPS.d_m_data * 1e9,
                     CI_upper,
                     CI_lower,
                     alpha=0.25,
                     facecolor='C1',
-                    label=f'{CI_coverage} % credible interval'
+                    label=f'{CI_coverage} % posterior predictive interval'
                     )
-    ax.semilogx(DMPS.d_m_data * 1e9, output_predicted_mean, 'C1-',
-                label='Mean predicted output')
+    ax.semilogx(DMPS.d_m_data * 1e9, output_predicted_median_noiseless, 'C1-',
+                label='Median predicted signal (noiseless)')
     ax.legend()
     ax.grid('on')
     ax.set_title('Data fit')
-    ax.set_xlabel('Selected DMA output diameter (nm)')
+    ax.set_xlabel('DMA output nominal diameter (nm)')
     ax.set_ylabel('Counts (#)')
-
-
-def plot_marginalized_psd(DMPS, posterior_samples, ax, CI=95, num_samples=0):
-    ''' A basic plot of the marginalized posterior of the PSD.
-    
-    Input:
-        CI - percentage of the credible interval (0-100)
-        num_samples - number of individual posterior samples plot on top of the CI
-    '''
-    
-    if CI < 0 or CI > 100:
-        raise ValueError('Invalid credible interval percentage.')
-    
-    # Divide by bin width (dN / dlogdp)
-    binwidth = np.diff(np.log10(DMPS.d_m))
-    binwidth = np.concatenate((binwidth, binwidth[-1, np.newaxis]))
-    samples_dNdlogdp = posterior_samples / binwidth
-    
-    # Highest density intervals
-    pr_plot = np.zeros((2, DMPS.d_m.shape[0]))
-    for i in range(DMPS.d_m.shape[0]):
-        pr_plot[:, i] = highest_density_interval(posterior_samples[:, i], CI / 100)
-    
-    pr_plot = pr_plot / binwidth
-    
-    ax.fill_between(DMPS.d_m * 1e9, pr_plot[1], pr_plot[0],
-                    alpha=0.25, facecolor='C0', label=f'{CI} % credible interval'
-                    )
-    
-    # Optionally plot some samples
-    if num_samples > 0:
-        if num_samples > 1:
-            n_jump = int(np.ceil(posterior_samples.shape[0] / (num_samples - 1)))
-            ax.plot(DMPS.d_m * 1e9, samples_dNdlogdp[::n_jump, :].T,
-                                 color='C2',
-                                 linewidth=1,
-                                 alpha=0.2
-                                 )
-        ax.plot(DMPS.d_m * 1e9, samples_dNdlogdp[-1, :], color='C2', linewidth=1, alpha=0.2,
-                             label='Posterior samples'
-                             )
-    mean_estimate = np.mean(posterior_samples, axis=0)
-    ax.plot(DMPS.d_m * 1e9, mean_estimate / binwidth, 'C0-', label='Mean of posterior samples')
-    
-    ax.set_xscale('log')
-    
-    ax.legend()
-    ax.set_title('Particle size distribution')
-    ax.set_xlabel('Particle mobility diameter (nm)')
-    ax.set_ylabel(r'dN / d$\log$d$_m$')
 
 
 def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None):
@@ -229,7 +176,7 @@ def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None):
     # [Ntot_low50, Ntot_high50] = highest_density_interval(Ntots, 0.50)
     
     if xlimits is None:
-        [plt_lo, plt_hi] = highest_density_interval(Ntots, 0.98)
+        [plt_lo, plt_hi] = highest_density_interval(Ntots, 0.997)
     else:
         plt_lo, plt_hi = xlimits
     
