@@ -6,6 +6,8 @@ Classes for storing and processing inversion results from MPSS data.
 
 import numpy as np
 from scipy.stats import norm
+from scipy.optimize import brentq
+
 
 
 def highest_density_interval(samples, percentage):
@@ -126,17 +128,63 @@ class InversionResult:
     
     
     def _postprocess_results_from_covariance_log10(self, CI):
+        """ Calculate the posterior median and highest density interval at credible level CI
+        for the lognormal density in N.
+        The HDI doesn't have an analytical expression, it must be solved numerically. For N,
+        the HDI is multiplicatively symmetric around the mode (but not the median, which we
+        report as the point estimate!). If 10^c is the posterior mode, then the lower HDI limit
+        is 10^c / r and the upper limit is 10^c * r, where r = 10^\delta. We find \delta by
+        solving a scalar equation, corresponding to finding the root of the function
+        'mass_equation' below.
+        """
         
-        # Calculate the requested credible interval estimates
-        # Marginal stds: sigma_i = sqrt(sum_j C[i,j]^2)
-        sigma = np.sqrt(np.sum(self.post_covL_log10[self.sl, :]**2, axis=1))
-        k = norm.ppf(0.5 + CI / 100 / 2)
+        # Point estimate in N: posterior median
+        post_median = 10**(self.post_mean_log10[self.sl])
         
-        CI_lower = 10**(self.post_mean_log10[self.sl] - k * sigma)
-        CI_upper = 10**(self.post_mean_log10[self.sl] + k * sigma)
-        post_MAP = 10**(self.post_mean_log10[self.sl])
+        #   CI is the desired mass in percent, e.g. 95 -> alpha = 0.95
+        alpha = CI / 100.0
         
-        return post_MAP, CI_lower, CI_upper
+        # Marginal stds in x-space (log10): s_i
+        s = np.sqrt(np.sum(self.post_covL_log10[self.sl, :]**2, axis=1))
+        mu10 = self.post_mean_log10[self.sl]
+        ln10 = np.log(10.0)
+        c = mu10 - ln10 * s**2  # 10^c is the mode for N
+    
+        CI_lower = np.zeros_like(mu10)
+        CI_upper = np.zeros_like(mu10)
+
+        def mass_equation(delta, si):
+            # f(delta) = P(c-delta <= x <= c+delta) - alpha
+            # where x ~ Normal(mu10, si^2)
+            a1 = (delta - ln10 * si**2) / si
+            a2 = (-delta - ln10 * si**2) / si
+            return norm.cdf(a1) - norm.cdf(a2) - alpha
+    
+        for i, si in enumerate(s):
+            # brentq needs a bracket [lo, hi] where f(lo) <= 0 and f(hi) >= 0.
+            # At delta = 0, mass is 0, so mass_equation(0) = -alpha < 0.
+            lo = 0.0
+            
+            # Pick a conservative upper bound for delta (in decades).
+            # If too small, we expand it until the bracket is valid.
+            hi = max(1.0, 10.0 * si)
+    
+            # Ensure f(hi) >= 0 so the root is bracketed.
+            while mass_equation(hi, si) < 0:
+                hi *= 2.0
+            
+            # Solve for delta such that the interval contains exactly alpha mass.
+            delta = brentq(mass_equation, lo, hi, args=(si,))
+            
+            # Form the HDI endpoints in x-space
+            xL = c[i] - delta
+            xU = c[i] + delta
+            
+            # Map to N-space
+            CI_lower[i] = 10.0**xL
+            CI_upper[i] = 10.0**xU
+        
+        return post_median, CI_lower, CI_upper
     
     
     def _postprocess_results_from_samples(self, CI):
