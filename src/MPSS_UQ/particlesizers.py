@@ -197,6 +197,9 @@ class DifferentialMobilityParticleSizer:
         if self.charging_model_name == 'Wiedensohler':
             raise Exception('Cannot change charger properties with the Wiedensohler model')
         
+        # Remember the inputs arguments
+        self._last_charger_inputs = tuple(args)
+        
         self.charging_probability = self.compute_charging_probability(*args)
         
         # Only update the system matrix if the operating conditions have been set
@@ -204,6 +207,13 @@ class DifferentialMobilityParticleSizer:
             self._update_system_matrix()
         
         self.charger_conditions_set = True
+    
+    
+    @property
+    def charger_inputs(self):
+        """Return the last inputs passed to set_charger_properties(...), if any."""
+        
+        return getattr(self, "_last_charger_inputs", None)
     
     
     def forward_model(self, log10_N):

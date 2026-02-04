@@ -330,46 +330,61 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
     # Starting guess for the Laplace approximation
     N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
     
-    i = 0
-    for p_idx, pos_ion_mobility in enumerate(pos_ion_mobilities):
-        for n_idx, neg_ion_mobility in enumerate(neg_ion_mobilities):
-            if pos_ion_mobility > neg_ion_mobility:
-                continue
-            
-            for _ in range(n_ion_ratios):
+    # Store the original charger properties so we can restore them
+    # after they've been mutated by the marginalization loop below
+    had_charger = getattr(sizer, 'charger_conditions_set', False)
+    orig_charger_inputs = sizer.charger_inputs
+    try:
+        i = 0
+        for p_idx, pos_ion_mobility in enumerate(pos_ion_mobilities):
+            for n_idx, neg_ion_mobility in enumerate(neg_ion_mobilities):
+                if pos_ion_mobility > neg_ion_mobility:
+                    continue
                 
-                if marginalize_ion_ratio:
-                    ion_ratio = np.random.normal(loc=1.0, scale=ion_ratio_std)
-                    sizer.set_charger_properties(pos_ion_mobility,
-                                                neg_ion_mobility,
-                                                ion_ratio
-                                                )
-                else:
-                    sizer.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
-                
-                # Calculate the Laplace approximation
-                MAP_estimate_log10, posterior_cov_L_log10 = Laplace_approximation(
-                    sizer, prior, measurement, N_start=N_guess,
-                    )
-                inversion_results.append(
-                    InversionResult(sizer.d_m,
-                                    post_mean_log10=MAP_estimate_log10,
-                                    post_covL_log10=posterior_cov_L_log10,
-                                    )
-                    )
-                
-                # Calculate the (relative) weight of the current mixture component
-                mixture_weights[i] = calculate_area_of_cell(pos_ion_mobility, neg_ion_mobility,
-                                                            step_pos, step_neg)
-                
-                # Store ion properties
-                ion_properties[i] = pos_ion_mobility, neg_ion_mobility, ion_ratio
-                
-                # Use the current MAP estimate as a starting guess for the next one
-                # (it _probably_ is quite close to the truth)
-                N_guess = MAP_estimate_log10
-                
-                i += 1
+                for _ in range(n_ion_ratios):
+                    
+                    if marginalize_ion_ratio:
+                        ion_ratio = max(1e-6, rng.normal(loc=1.0, scale=ion_ratio_std))
+                        sizer.set_charger_properties(pos_ion_mobility,
+                                                     neg_ion_mobility,
+                                                     ion_ratio
+                                                     )
+                    else:
+                        sizer.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
+                    
+                    # Calculate the Laplace approximation
+                    MAP_estimate_log10, posterior_cov_L_log10 = Laplace_approximation(
+                        sizer, prior, measurement, N_start=N_guess,
+                        )
+                    inversion_results.append(
+                        InversionResult(sizer.d_m,
+                                        post_mean_log10=MAP_estimate_log10,
+                                        post_covL_log10=posterior_cov_L_log10,
+                                        )
+                        )
+                    
+                    # Calculate the (relative) weight of the current mixture component
+                    mixture_weights[i] = calculate_area_of_cell(pos_ion_mobility,
+                                                                neg_ion_mobility,
+                                                                step_pos, step_neg)
+                    
+                    # Store ion properties
+                    ion_properties[i] = pos_ion_mobility, neg_ion_mobility, ion_ratio
+                    
+                    # Use the current MAP estimate as a starting guess for the next one
+                    # (it _probably_ is quite close to the truth)
+                    N_guess = MAP_estimate_log10
+                    
+                    i += 1
+    
+    finally:
+        # Restore the charger properties
+        if had_charger and orig_charger_inputs is not None:
+            sizer.set_charger_properties(*orig_charger_inputs)
+        else:
+            # No charger properties were set, restore to "not set" state
+            sizer.charger_conditions_set = False
+            sizer.system_matrix[:] = 0.0
     
     mixture_weights /= np.sum(mixture_weights)
     
