@@ -130,8 +130,9 @@ def generate_DMPS_measurement(DMPS_prop,
     DMPS = DifferentialMobilityParticleSizer(DMPS_prop, inversion_grid=d_m)
     
     # Set the ambient temperature and pressure
-    temperature = 293.15  # [K]
-    pressure = 101325  # [Pa]
+    from MPSS_UQ.aerosol import NORMAL_TEMPERATURE, NORMAL_PRESSURE
+    temperature = NORMAL_TEMPERATURE  # [K]
+    pressure = NORMAL_PRESSURE  # [Pa]
     
     DMPS.set_operating_conditions(temperature, pressure)
 

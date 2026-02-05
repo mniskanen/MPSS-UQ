@@ -11,6 +11,10 @@ ELECTRON_CHARGE = 1.602176634e-19  # Elementary charge
 VACUUM_PERMITTIVITY = 8.8541878188e-12
 AIR_RELATIVE_PERMITTIVITY = 1.00058986  # i.e., its dielectric constant
 
+# Normal temperature and pressure
+NORMAL_TEMPERATURE = 293.15  # Kelvin
+NORMAL_PRESSURE = 101325  # Pa
+
 
 def dynamic_viscosity(temperature):
     """ Dynamic viscosity of air given by the Sutherland formula. """
