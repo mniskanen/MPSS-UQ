@@ -386,7 +386,10 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
             sizer.charger_conditions_set = False
             sizer.system_matrix[:] = 0.0
     
-    mixture_weights /= np.sum(mixture_weights)
+    sum_w = np.sum(mixture_weights)
+    if sum_w <= 0:
+        raise RuntimeError('Mixture weights sum to zero. Check the grid construction.')
+    mixture_weights /= sum_w
     
     # First calculate, proportional to mixture_probabilities, how many times
     # each mixture component should be sampled (counts)
