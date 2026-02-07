@@ -115,6 +115,26 @@ class MeasurementDataset:
                 )
     
     
+    def between_times(self, start, end, closed="both"):
+        """
+        start/end: datetime-like
+        closed: 'left' | 'right' | 'both' | 'neither'
+        """
+        dt = self.datetimes
+        # Convert to numpy datetime64 if not already
+        if not np.issubdtype(dt.dtype, np.datetime64):
+            dt = dt.astype("datetime64[ns]")
+    
+        start = np.datetime64(start)
+        end   = np.datetime64(end)
+    
+        mask_left  = dt >= start if closed in ("left", "both") else dt > start
+        mask_right = dt <= end   if closed in ("right","both") else dt < end
+        mask = mask_left & mask_right
+        
+        return self._return_subset(mask)
+    
+    
     def __getitem__(self, idx: Union[int, slice, Sequence[int], np.ndarray]):
             """
             - int -> Measurement
