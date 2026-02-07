@@ -3,6 +3,8 @@
 import numpy as np
 import warnings
 
+from typing import Union, Sequence
+
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
 
 
@@ -79,25 +81,55 @@ class MeasurementDataset:
         return len(self.output_vector)
     
     
-    def __getitem__(self, idx):
+    def _return_single_measurement(self, idx: int):
         
-        measurement = Measurement(self.datetimes[idx],
-                                  self.d_m_data,
-                                  self.output_vector[idx],
-                                  self.output_type,
-                                  self.temperatures[idx],
-                                  self.pressures[idx],
-                                  )
-        
-        measurement.preprocess()
-        
-        return measurement
-
-
-def measurement_loader(dataset):
+            measurement = Measurement(
+                self.datetimes[idx],
+                self.d_m_data,
+                self.output_vector[idx],
+                self.output_type,
+                self.temperatures[idx],
+                self.pressures[idx],
+                )
+            measurement.preprocess()
+            return measurement
     
-    for i in range(len(dataset)):
-        yield dataset[i]
+    
+    def _return_subset(self, indices):
+            """
+            Build a new dataset with a subset of rows (as a view when possible).
+            `indices` can be a slice, a list/ndarray of ints, or a boolean mask.
+            """
+            new_datetimes   = self.datetimes[indices]
+            new_outputs     = self.output_vector[indices]
+            new_temps       = self.temperatures[indices]
+            new_pressures   = self.pressures[indices]
+    
+            return MeasurementDataset(
+                new_datetimes,
+                self.d_m_data,
+                new_outputs,
+                self.output_type,
+                new_temps,
+                new_pressures,
+                )
+    
+    
+    def __getitem__(self, idx: Union[int, slice, Sequence[int], np.ndarray]):
+            """
+            - int -> Measurement
+            - slice / list / ndarray / boolean mask -> MeasurementDataset
+            """
+            if isinstance(idx, (int, np.integer)):
+                # Support negative indices too (NumPy/Python semantics)
+                if idx < 0:
+                    idx += len(self)
+                if idx < 0 or idx >= len(self):
+                    raise IndexError("Index out of range.")
+                return self._return_single_measurement(idx)
+    
+            # Slice, list, ndarray, or boolean mask -> subset dataset
+            return self._return_subset(idx)
 
 
 def generate_DMPS_measurement(DMPS_prop,
