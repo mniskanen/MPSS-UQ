@@ -3,14 +3,18 @@
 import numpy as np
 
 from scipy.linalg import toeplitz
-from typing import Literal
+from typing import Literal, Iterable, Tuple
+import psutil
+from joblib import Parallel, delayed
 
-from MPSS_UQ.inversion_results import InversionResult
+from tqdm import tqdm
+
+from MPSS_UQ.inversion_results import InversionResult, InversionDataset
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
 
 # Prevent the system from throttling down the CPU by giving any process that uses
 # inversion methods a higher priority
-import psutil, os
+import os
 p = psutil.Process(os.getpid())
 try:
     p.nice(psutil.HIGH_PRIORITY_CLASS)  # Windows constant
@@ -107,6 +111,139 @@ def invert_psd(
                                    post_mean_log10=MAP,
                                    post_covL_log10=post_cov_L,
                                    )
+
+
+
+def invert_dataset(
+    sizer: DifferentialMobilityParticleSizer,
+    dataset,  # MeasurementDataset or a sequence of measurement-like objects
+    *,
+    prior=None,
+    marginalize_ion_mobility: bool = False,
+    marginalize_ion_ratio: bool = False,
+    marginalization_grid: Literal['standard', 'fine'] = 'standard',
+    sample_posterior: bool = False,
+    num_samples: int | None = None,
+    parallel: bool = True,
+    backend: Literal['loky', 'multiprocessing', 'threading'] = 'loky',
+    n_jobs: int | None = None,
+    sort_for_cache: bool = True,
+    progress: bool = True,
+    ) -> InversionDataset:
+    """
+    Invert an entire dataset of MPSS measurements (optionally in parallel)
+    and return an InversionDataset with per-measurement results.
+
+    Parameters
+    ----------
+    sizer : DifferentialMobilityParticleSizer
+        A configured sizer instance. The function will set operating conditions
+        per measurement; with backend='loky' each worker gets its own copy.
+    dataset : MeasurementDataset | Sequence
+        Iterable of measurements; must support __len__ and __getitem__ (0..n-1).
+    prior : dict | None
+        PSD prior. If None, uses smoothness_prior(sizer.d_m, 0, 0.5, 1.5).
+    marginalize_ion_mobility, marginalize_ion_ratio, marginalization_grid,
+    sample_posterior, num_samples
+        Passed through to invert_psd(...).
+    parallel : bool
+        If True, use joblib.Parallel with the given backend.
+    backend : {'loky','multiprocessing','threading'}
+        Default 'loky' copies objects (safe to mutate sizer in workers).
+    n_jobs : int | None
+        Number of worker processes/threads. Default = max(1, physical_cpus-1).
+    sort_for_cache : bool
+        If True, sort measurements by rounded (T, p) to improve cache locality
+        in the sizer (see the @lru_cache usage in particlesizers.py). Results
+        are reordered to match the input.
+    progress : bool
+        Show a progress bar.
+
+    Returns
+    -------
+    InversionDataset
+        Holds results, datetimes, and supports downstream plotting/summary.
+    """
+    
+    if prior is None:
+        prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
+    # Build output container using input datetimes if available
+    try:
+        inv_dataset = InversionDataset(dataset.datetimes)
+    except AttributeError:
+        inv_dataset = InversionDataset(
+            [getattr(dataset[i], "datetime", None) for i in range(len(dataset))]
+            )
+
+    # Collect and optionally sort tasks
+    measurements = [dataset[i] for i in range(len(dataset))]
+    if sort_for_cache:
+        # group by rounded temperature and pressure (mirrors your example)
+        # rounding choices follow your current practice
+        sortable = list(enumerate(measurements))
+        sortable.sort(
+            key=lambda x: (
+                int(round(x[1].temperature / 2.0) * 2),       # 2 K buckets
+                int(round(x[1].pressure * 1e2 / 25.0) * 25),  # 25 Pa buckets
+            )
+        )
+    else:
+        sortable = list(enumerate(measurements))
+
+    # Worker
+    def _solve_one(task: Tuple[int, object]):
+        idx, meas = task
+        # Set operating conditions per measurement
+        s = sizer  # each worker gets its own copy with 'loky'
+        s.set_operating_conditions(meas.temperature, meas.pressure)
+        res = invert_psd(
+            s, meas, prior=prior,
+            marginalize_ion_mobility=marginalize_ion_mobility,
+            marginalize_ion_ratio=marginalize_ion_ratio,
+            marginalization_grid=marginalization_grid,
+            num_samples=num_samples,
+            sample_posterior=sample_posterior,
+        )
+        return idx, res
+
+    # Decide concurrency
+    if parallel:
+        if n_jobs is None:
+            n_cpus = psutil.cpu_count(logical=False) or 1
+            n_jobs = max(1, n_cpus - 1)
+        iterator = sortable
+        if progress:
+            iterator = tqdm(iterator, total=len(sortable))
+        
+        # Important: the 'loky' backend makes copies (via pickling) of the objects each worker
+        # needs, so each process receives its own copy of, for example, the DMPS and therefore
+        # it is safe to mutate the DMPS inside 'run_inversion'. With a different backend this
+        # may not be the case.
+        # TODO: could do this in batches to help memory usage with huge datasets
+        results = Parallel(n_jobs=n_jobs, backend=backend)(
+            delayed(_solve_one)(task) for task in iterator
+            )
+        # Assign results to original indices
+        for idx, res in results:
+            inv_dataset.assign_result(idx, res)
+    else:
+        iterator = sortable
+        if progress:
+            iterator = tqdm(iterator, total=len(sortable))
+        for idx, meas in iterator:
+            sizer.set_operating_conditions(meas.temperature, meas.pressure)
+            res = invert_psd(
+                sizer, meas, prior=prior,
+                marginalize_ion_mobility=marginalize_ion_mobility,
+                marginalize_ion_ratio=marginalize_ion_ratio,
+                marginalization_grid=marginalization_grid,
+                num_samples=num_samples,
+                sample_posterior=sample_posterior,
+            )
+            inv_dataset.assign_result(idx, res)
+    
+    return inv_dataset
+
 
 
 def log_post(vals, sizer, L_noise, prior, y_meas):
@@ -612,3 +749,10 @@ def run_mcmc(
     )
     
     return np.power(10, samples_x)
+
+
+__all__ = [
+    "invert_dataset",
+    "invert_psd",
+    "smoothness_prior",
+]
