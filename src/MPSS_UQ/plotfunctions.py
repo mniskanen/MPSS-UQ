@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import numpy.ma as ma
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
@@ -46,65 +47,120 @@ def plot_posterior_summary(ax, result, CI_coverage=95):
     ax.legend()
 
 
-def plot_timeseries(ax, datetimes, d_m, Z, cmap='viridis', log_color_scale=True,
-                    cbar_label=None):
-    ''' Plot a timeseries of Z (a function of particle size and datetime). '''
+def plot_timeseries(ax, datetimes, d_m, Z,
+                    cmap='viridis',
+                    log_color_scale=True,
+                    vmin=None, vmax=None,  # manual limits
+                    cbar_label=None,
+                    ):
+    '''
+    Plot Z(time, size) as pcolormesh with gap masking and optional manual color limits.
     
-    TT, DD = np.meshgrid(datetimes, d_m * 1e9)
+    Parameters
+    ----------
+    vmin, vmax : float or None
+        Manual color limits. If None, computed from data.
+    log_color_scale : bool
+        If True (and norm is None), use LogNorm; else linear Normalize.
+    '''
     
-    vmin = np.quantile(Z.flatten(), 0.001)
-    vmax = np.max(Z)
+    # Compute time diffs in minutes
+    dt = np.diff(datetimes)
+    
+    # Estimate typical measurement length
+    typical_dt = np.median(dt)
+    gap_thresh = 1.5 * typical_dt
+    
+    # Alternatively give it direcetly in minutes
+    # gap_thresh = np.timedelta64(9, 'm')
+    
+    # Give the last datapoint a width so it is correctly visualized
+    date_edges = np.empty(len(datetimes) + 1, dtype=datetimes.dtype)
+    date_edges[:-1] = datetimes
+    date_edges[-1] = datetimes[-1] + typical_dt
+    
+    binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
+    d_m_edges = np.empty(len(d_m) + 1, dtype=d_m.dtype)
+    d_m_edges[:-1] = 10**(np.log10(d_m) - 0.5 * binwidth)
+    d_m_edges[-1] = 10**(np.log10(d_m[-1]) + 0.5 * binwidth)
+    
+    # To nm
+    d_m_edges *= 1e9
+    
+    # Identify the intervals (between t[i] and t[i+1]) that are too wide
+    gap_intervals = dt > gap_thresh
+    
+    # # Create masked array and mask the column whose cell spans the gap interval
+    gap_cols = np.zeros(Z.shape[1], dtype=bool)
+    gap_cols[:-1] = gap_intervals  # column i corresponds to [t[i], t[i+1])
+    Z_masked = ma.array(Z, copy=True)
+    Z_masked[:, gap_cols] = ma.masked
+    
+    # Determine color scaling
+    data_for_limits = Z_masked.compressed() if ma.isMaskedArray(Z_masked) else Z_masked.ravel()
+    if vmin is None:
+        vmin = np.quantile(data_for_limits, 0.001)
+    if vmax is None:
+        vmax = np.max(data_for_limits)
     
     if log_color_scale:
-        kwargs = dict(norm=colors.LogNorm(vmin=vmin, vmax=vmax))
+        _norm = colors.LogNorm(vmin=vmin, vmax=vmax)
     else:
-        kwargs = dict(vmin=vmin, vmax=vmax)
+        _norm = colors.Normalize(vmin=vmin, vmax=vmax)
     
-    im = ax.pcolormesh(TT, DD, Z, cmap=cmap, shading='auto', **kwargs)
-    cbar = ax.figure.colorbar(im, ax=ax,
-                         label=cbar_label)
+    im = ax.pcolormesh(date_edges, d_m_edges, Z_masked, cmap=cmap, norm=_norm, shading='auto')
+    cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
+    ax._colorbar = cbar  # attach the colorbar for easy reference later
     ax.set_yscale('log')
     ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
     ax.set_yticks([d_m[0] * 1e9, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
     ax.set_ylabel('Particle diameter (nm)')
     ax.set_xlabel('Time')
+    
+    return im
 
 
-def plot_system_matrix(DMPS, num=None, title=None):
+def plot_system_matrix(ax, DMPS, title=None):
     ''' Plot the system matrix of the DMPS.
     Input:
+        ax - figure axis
         DMPS - The DMPS object
-        num - figure number
         title - additional title for the figure
     '''
-    
-    if num is None:
-        num = 10
-    
     if title is None:
         title = ''
     else:
         title = f', {title}'  # add a comma
     
-    plt.figure(num=num, clear=True)
-    X, Y = np.meshgrid(DMPS.d_m * 1e9, DMPS.d_m_data * 1e9)
+    dmx = DMPS.d_m * 1e9          # x centers
+    dmy = DMPS.d_m_data * 1e9
     
-    plt.pcolormesh(X, Y, DMPS.system_matrix)
+    # Build log-spaced edges from centers
+    def edges_from_centers_log(c):
+        c = np.asarray(c)
+        # interior edges as geometric mean of neighbors
+        inner = np.sqrt(c[1:] * c[:-1])
+        # extrapolate endpoints (geometric ratio)
+        r0 = c[1] / c[0]
+        r1 = c[-1] / c[-2]
+        e0 = c[0] / np.sqrt(r0)
+        e1 = c[-1] * np.sqrt(r1)
+        return np.concatenate(([e0], inner, [e1]))
     
-    # Z = np.clip(dma.system_matrix, 1e-4, np.inf)
-    # norm = colors.LogNorm(vmin=np.nanmin(Z), vmax=np.nanmax(Z), clip=False)
-    # plt.pcolormesh(X, Y, Z, norm=norm)
+    xe = edges_from_centers_log(dmx)
+    ye = edges_from_centers_log(dmy)
+    Xedges, Yedges = np.meshgrid(xe, ye)
     
-    # plt.pcolormesh(X, Y, np.log10(np.clip(dma.system_matrix, 1e-6, np.inf)))
+    im = ax.pcolormesh(Xedges, Yedges, DMPS.system_matrix)
     
-    plt.gca().invert_yaxis()
-    plt.title(f'DMPS system matrix{title}')
-    plt.xlabel('Modelled diameter (nm)')
-    plt.ylabel('Nominal measured diameter (nm)')
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.axis('equal')
-    plt.colorbar()
+    ax.invert_yaxis()
+    ax.set_title(f'DMPS system matrix{title}')
+    ax.set_xlabel('Modelled diameter (nm)')
+    ax.set_ylabel('Nominal measured diameter (nm)')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_aspect('equal', adjustable='box')
+    # cbar = ax.figure.colorbar(im, ax=ax, label='Matrix values')
 
 
 def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverage=95):
