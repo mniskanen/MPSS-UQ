@@ -7,6 +7,9 @@ Classes for storing and processing inversion results from MPSS data.
 import numpy as np
 from scipy.stats import norm
 from scipy.optimize import brentq
+from joblib import Parallel, delayed
+
+from tqdm import tqdm
 
 
 
@@ -285,7 +288,8 @@ class InversionDataset:
     def __init__(self, datetimes):
         self.datetimes = datetimes
         self.results = [None] * len(datetimes)
-
+    
+    
     def assign_result(self, idx, result: InversionResult):
         self.results[idx] = result
     
@@ -304,21 +308,40 @@ class InversionDataset:
         return posterior_variances
     
     
-    def posterior_summary(self, *args, **kwargs):
+    def posterior_summary(self, *args, n_jobs=-1, backend="loky", **kwargs):
         """
         Returns arrays of posterior median, lower CI, upper CI for all results.
+        
+        Parameters
+        ----------
+        n_jobs : int
+            Number of worker processes. -1 uses all cores.
+        backend : str
+            "loky" uses processes (safe default). "threading" uses threads.
         """
         num_results = len(self.results)
         num_d_m = self.results[0].d_m.shape[0]
+        
+        def _summary_one(res, *args, **kwargs):
+            # Helper so joblib can pickle the callable cleanly
+            return res.posterior_summary(*args, **kwargs)
+        
+        iterator = tqdm(self.results, total=len(self.results),
+                        desc='Calculating posterior summaries')
+        # Run each result in parallel; order is preserved by joblib
+        outs = Parallel(n_jobs=n_jobs, backend=backend)(
+            delayed(_summary_one)(res, *args, **kwargs) for res in iterator
+            )
+    
+        # Unpack into preallocated arrays
         posterior_medians = np.zeros((num_results, num_d_m))
         CI_lower = np.zeros_like(posterior_medians)
         CI_upper = np.zeros_like(posterior_medians)
-        
-        for i in range(num_results):
-            posterior_medians[i], CI_lower[i], CI_upper[i] = self.results[i].posterior_summary(
-                *args, **kwargs
-                )
-        
+        for i, (med, lo, up) in enumerate(outs):
+            posterior_medians[i] = med
+            CI_lower[i] = lo
+            CI_upper[i] = up
+    
         return posterior_medians, CI_lower, CI_upper
     
     
