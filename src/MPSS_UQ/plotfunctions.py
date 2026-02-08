@@ -2,6 +2,8 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
+import matplotlib.ticker as tck
 
 from MPSS_UQ.inversion_results import highest_density_interval, InversionResult
 
@@ -42,6 +44,30 @@ def plot_posterior_summary(ax, result, CI_coverage=95):
     plot_psd(ax, result.d_m, N=N_median, linestyle='-', color='C0', label=label)
     
     ax.legend()
+
+
+def plot_timeseries(ax, datetimes, d_m, Z, cmap='viridis', log_color_scale=True,
+                    cbar_label=None):
+    ''' Plot a timeseries of Z (a function of particle size and datetime). '''
+    
+    TT, DD = np.meshgrid(datetimes, d_m * 1e9)
+    
+    vmin = np.quantile(Z.flatten(), 0.001)
+    vmax = np.max(Z)
+    
+    if log_color_scale:
+        kwargs = dict(norm=colors.LogNorm(vmin=vmin, vmax=vmax))
+    else:
+        kwargs = dict(vmin=vmin, vmax=vmax)
+    
+    im = ax.pcolormesh(TT, DD, Z, cmap=cmap, shading='auto', **kwargs)
+    cbar = ax.figure.colorbar(im, ax=ax,
+                         label=cbar_label)
+    ax.set_yscale('log')
+    ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
+    ax.set_yticks([d_m[0] * 1e9, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
+    ax.set_ylabel('Particle diameter (nm)')
+    ax.set_xlabel('Time')
 
 
 def plot_system_matrix(DMPS, num=None, title=None):
