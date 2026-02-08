@@ -35,12 +35,12 @@ def invert_psd(
         marginalize_ion_ratio=False,
         marginalization_grid : Literal['standard', 'fine'] = 'standard',
         num_samples=None,
-        sample_posterior=False,
+        use_mcmc=False,
         ):
     ''' Estimate the particle size distribution (PSD) from an MPSS measurement.
     
     With no marginalization, the posterior is approximated by the Laplace approximation
-    (MAP + covariance). Optionally, one can set sample_posterior to True which carries out
+    (MAP + covariance). Optionally, one can set use_mcmc to True which carries out
     MCMC sampling and returns the samples.
     
     Marginalization is carried over over a range of ion mobilities and ratios using
@@ -75,9 +75,9 @@ def invert_psd(
         prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
     
     if marginalize_ion_mobility is True or marginalize_ion_ratio is True:
-        if sample_posterior is True:
+        if use_mcmc is True:
             raise ValueError('Cannot carry out MCMC with posterior marginalization. ' +
-                             'Set sample_posterior to False.')
+                             'Set use_mcmc to False.')
         
         if num_samples is None:
             num_samples = 5000
@@ -95,8 +95,7 @@ def invert_psd(
                                ion_property_samples=ion_property_samples,
                                )
     else:
-        if sample_posterior:
-            # MCMC
+        if use_mcmc:
             if num_samples is None:
                 num_samples = 100000
                 
@@ -122,7 +121,7 @@ def invert_dataset(
     marginalize_ion_mobility: bool = False,
     marginalize_ion_ratio: bool = False,
     marginalization_grid: Literal['standard', 'fine'] = 'standard',
-    sample_posterior: bool = False,
+    use_mcmc: bool = False,
     num_samples: int | None = None,
     parallel: bool = True,
     backend: Literal['loky', 'multiprocessing', 'threading'] = 'loky',
@@ -144,7 +143,7 @@ def invert_dataset(
     prior : dict | None
         PSD prior. If None, uses smoothness_prior(sizer.d_m, 0, 0.5, 1.5).
     marginalize_ion_mobility, marginalize_ion_ratio, marginalization_grid,
-    sample_posterior, num_samples
+    use_mcmc, num_samples
         Passed through to invert_psd(...).
     parallel : bool
         If True, use joblib.Parallel with the given backend.
@@ -202,7 +201,7 @@ def invert_dataset(
             marginalize_ion_ratio=marginalize_ion_ratio,
             marginalization_grid=marginalization_grid,
             num_samples=num_samples,
-            sample_posterior=sample_posterior,
+            use_mcmc=use_mcmc,
         )
         return idx, res
 
@@ -213,7 +212,7 @@ def invert_dataset(
             n_jobs = max(1, n_cpus - 1)
         iterator = sortable
         if progress:
-            iterator = tqdm(iterator, total=len(sortable))
+            iterator = tqdm(iterator, total=len(sortable), desc='Inverting dataset')
         
         # Important: the 'loky' backend makes copies (via pickling) of the objects each worker
         # needs, so each process receives its own copy of, for example, the DMPS and therefore
@@ -229,7 +228,7 @@ def invert_dataset(
     else:
         iterator = sortable
         if progress:
-            iterator = tqdm(iterator, total=len(sortable))
+            iterator = tqdm(iterator, total=len(sortable), desc='Inverting dataset')
         for idx, meas in iterator:
             sizer.set_operating_conditions(meas.temperature, meas.pressure)
             res = invert_psd(
@@ -238,7 +237,7 @@ def invert_dataset(
                 marginalize_ion_ratio=marginalize_ion_ratio,
                 marginalization_grid=marginalization_grid,
                 num_samples=num_samples,
-                sample_posterior=sample_posterior,
+                use_mcmc=use_mcmc,
             )
             inv_dataset.assign_result(idx, res)
     
