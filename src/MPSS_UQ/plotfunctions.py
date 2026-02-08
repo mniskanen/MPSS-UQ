@@ -110,7 +110,7 @@ def plot_timeseries(ax, datetimes, d_m, Z,
     
     im = ax.pcolormesh(date_edges, d_m_edges, Z_masked, cmap=cmap, norm=_norm, shading='auto')
     cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
-    ax._colorbar = cbar  # attach the colorbar for easy reference later
+    ax._my_colorbar = cbar  # attach the colorbar for easy reference later
     ax.set_yscale('log')
     ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
     ax.set_yticks([d_m[0] * 1e9, 20, 50, 100, 250, 500, d_m[-1] * 1e9])

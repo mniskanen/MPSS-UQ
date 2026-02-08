@@ -160,7 +160,7 @@ im2.set_facecolors(rgba.reshape(-1, 4))
 # Colorbar from PSD only (not alpha)
 sm = plt.cm.ScalarMappable(norm=norm_psd, cmap=cmap_psd)
 sm.set_array([])
-axs[2]._colorbar.update_normal(sm)
+axs[2]._my_colorbar.update_normal(sm)
 axs[2].set_title('Posterior median with relative uncertainty (= transparency)')
 
 fig.tight_layout()
