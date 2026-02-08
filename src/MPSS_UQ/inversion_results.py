@@ -405,3 +405,68 @@ class InversionDataset:
     def set_reporting_range(self, reporting_range : str):
         for i in range(len(self.results)):
             self.results[i].set_reporting_range(reporting_range)
+    
+    
+    def _return_subset(self, indices):
+            """
+            Build a new InversionDataset with a subset of rows (as a view when possible).
+            `indices` can be a slice, a list/ndarray of ints, or a boolean mask.
+            """
+            new_datetimes = self.datetimes[indices]
+            
+            # Reuse the same InversionResult objects (no deep copy).
+            # If you prefer isolation, you could clone here, but it's usually unnecessary.
+            if isinstance(indices, (slice, list, np.ndarray)):
+                new_results = (np.array(self.results, dtype=object)[indices]).tolist()
+            else:
+                # Fallback for other index types
+                new_results = [self.results[indices]]
+            
+            new_ds = InversionDataset(new_datetimes)
+            new_ds.results = new_results
+            return new_ds
+    
+    
+    def between_times(self, start, end, closed="both"):
+        """
+        Return a new InversionDataset restricted to [start, end] using the chosen
+        boundary convention.
+        
+        Parameters
+        ----------
+        start, end : datetime-like (np.datetime64, pandas Timestamp, str parsable to datetime64)
+        closed : {'left', 'right', 'both', 'neither'}
+            - 'both'   : start <= t <= end
+            - 'left'   : start <= t <  end
+            - 'right'  : start <  t <= end
+            - 'neither': start <  t <  end
+        """
+        dt = self.datetimes
+        # Ensure numpy datetime64 for consistent comparisons
+        if not np.issubdtype(dt.dtype, np.datetime64):
+            dt = dt.astype("datetime64[ns]")
+        
+        start = np.datetime64(start)
+        end   = np.datetime64(end)
+        
+        mask_left  = (dt >= start) if closed in ("left", "both") else (dt > start)
+        mask_right = (dt <= end)   if closed in ("right", "both") else (dt < end)
+        mask = mask_left & mask_right
+        
+        return self._return_subset(mask)
+    
+    
+    def __getitem__(self, idx):
+        """
+        - int -> InversionResult
+        - slice / list / ndarray / boolean mask -> InversionDataset
+        """
+        if isinstance(idx, (int, np.integer)):
+            # Support negative indices (Python/NumPy semantics)
+            if idx < 0:
+                idx += len(self.results)
+            if idx < 0 or idx >= len(self.results):
+                raise IndexError("Index out of range.")
+            return self.results[idx]
+        # For multi-select, return a sliced dataset
+        return self._return_subset(idx)

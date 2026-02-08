@@ -86,9 +86,12 @@ inv_dataset = invert_dataset(DMPS,
                              parallel=True,
                              )
 
+# You can also invert a larger dataset and then choose a subset to analyze using datetimes as
+# shown below. This reuses the results objects so it is memory-light.
+# example_day = inv_dataset.between_times('2024-12-10', '2024-12-11')
 
 
-#%%
+
 # =============================================================================
 # Plot the results
 # =============================================================================
@@ -164,7 +167,7 @@ fig.tight_layout()
 plt.show()
 
 
-#%%
+
 # Figure 2: Variance reduction and posterior CI width plots -------------------
 fig, axs = plt.subplots(nrows=2, ncols=1, num=2, clear=True)
 
