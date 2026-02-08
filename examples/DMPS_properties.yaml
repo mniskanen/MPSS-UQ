@@ -26,5 +26,8 @@ UEF-A20:     # configuration name
   # The sampling line can be composed of any number of sections.
   # Each row below describes one section. For no inlet remove/comment out all rows.
   inlets:
-    - [1.0, 1.0]  # [length [m], flow rate [l/min]]
-    # - [0.5, 1.0]  # second part etc.
+    # [length [m], flow rate [l/min]]
+    - [2.5, 55.0]
+    - [1.0, 4.0]
+    - [1.05, 2.0]
+    - [0.60, 1.0]
