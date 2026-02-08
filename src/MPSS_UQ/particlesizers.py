@@ -139,7 +139,11 @@ class DifferentialMobilityParticleSizer:
     
     def set_operating_conditions(self, temperature, pressure):
         ''' Set the operating temperature and pressure, then update all parts of the MPSS these
-        values affect. Finally assemble the updated system matrix. '''
+        values affect. Finally assemble the updated system matrix.
+        Input:
+            temperature - in K
+            pressure - in Pa
+        '''
         
         # First quantize inputs (for LRU caching)
         
