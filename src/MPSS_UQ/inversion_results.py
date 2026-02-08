@@ -345,6 +345,63 @@ class InversionDataset:
         return posterior_medians, CI_lower, CI_upper
     
     
+    def Ntot_summary(self, *, coverage=95, n_jobs=-1, backend="loky",
+                     n_samples=None, use_mean=False):
+        """
+        Compute per-measurement total particle count (Ntot) summaries across the dataset.
+    
+        For each InversionResult:
+          1) draw Ntot samples via result.Ntot_samples(n_samples)
+          2) report the center (median by default, or mean if use_mean=True)
+          3) compute the highest-density interval (HDI) at the given coverage
+    
+        Parameters
+        ----------
+        coverage : float in (0, 100)
+            Credible mass percentage for the interval (e.g. 95).
+        n_jobs : int
+            Parallel workers for joblib. -1 uses all cores.
+        backend : {"loky", "threading"}
+            "loky" uses processes (robust default). "threading" uses threads.
+        n_samples : int or None
+            Number of Ntot samples to draw per result.
+            If None, uses the default behavior in InversionResult.Ntot_samples().
+        use_mean : bool
+            If True, report the mean instead of the median as the point estimate.
+    
+        Returns
+        -------
+        Ntots : (N,) ndarray
+            Point estimates (median by default) of Ntot for each measurement.
+        Ntots_CI_low : (N,) ndarray
+            Lower HDI bound for each measurement.
+        Ntots_CI_high : (N,) ndarray
+            Upper HDI bound for each measurement.
+        """
+        if not (0 < coverage < 100):
+            raise ValueError("coverage must be in (0, 100)")
+    
+        # local helper so joblib can pickle it cleanly
+        def _one(res):
+            samples = res.Ntot_samples(n_samples)
+            center = np.mean(samples) if use_mean else np.median(samples)
+            lo, hi = highest_density_interval(samples, coverage / 100.0)
+            return center, lo, hi
+    
+        iterator = tqdm(self.results, total=len(self.results),
+                        desc="Calculating Ntot summaries")
+    
+        outs = Parallel(n_jobs=n_jobs, backend=backend)(
+            delayed(_one)(res) for res in iterator
+        )
+    
+        Ntots = np.array([o[0] for o in outs])
+        Ntots_CI_low = np.array([o[1] for o in outs])
+        Ntots_CI_high = np.array([o[2] for o in outs])
+    
+        return Ntots, Ntots_CI_low, Ntots_CI_high
+    
+    
     def set_reporting_range(self, reporting_range : str):
         for i in range(len(self.results)):
             self.results[i].set_reporting_range(reporting_range)
