@@ -2,295 +2,275 @@
 
 import yaml
 import numpy as np
+import pandas as pd
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
-import psutil
-from joblib import Parallel, delayed
 import zipfile
-import os
 
 from tqdm import tqdm
 
-from MPSS_UQ.measurement_data import MeasurementDataset, measurement_loader
+from MPSS_UQ.measurement_data import MeasurementDataset
 from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer, lpm_to_m3s
-from MPSS_UQ.inversion import invert_psd, smoothness_prior
+from MPSS_UQ.inversion import invert_dataset, invert_psd, smoothness_prior
 from MPSS_UQ.inversion_results import InversionDataset, highest_density_interval
-from MPSS_UQ.plotfunctions import plot_posterior_summary, plot_Ntot_histogram, plot_datafit
-
-from read_dmps_files_labtest import load_and_process_data
-
+from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
+                                   plot_timeseries)
 
 
-DO_PARALLEL = False
-MARGINALIZE_ION_MOBILITY = False
+# =============================================================================
+# Load a configuration file to set up the DMPS model
+# =============================================================================
+
+with open("../DMPS_properties.yaml", "r") as f:
+    DMPS_prop = yaml.safe_load(f)
+DMPS_prop = DMPS_prop['UEF-A20']
 
 
-if __name__ == '__main__':
+# =============================================================================
+# Load the example measurement and place into MeasurementDataset
+# =============================================================================
 
-    # =============================================================================
-    # Load a configuration file to set up the DMPS model
-    # =============================================================================
-    
-    with open("../DMPS_properties.yaml", "r") as f:
-        DMPS_prop = yaml.safe_load(f)
-    DMPS_prop = DMPS_prop['UEF-A20']
-    
-    
-    
-    # =============================================================================
-    # Load the example measurement and place into MeasurementDataset
-    # =============================================================================
-    
-    folder_path = "UEF_DMPS_level_0_test_data"
-    
-    # Extract the .zip file if needed
-    if not os.path.exists(folder_path):
-        with zipfile.ZipFile("UEF_DMPS_level_0_test_data.zip", 'r') as zip_ref:
-            zip_ref.extractall("UEF_DMPS_level_0_test_data")
-    
-    start_date = "2024-11-13"
-    end_date = "2024-11-20"
-    filename = 'UEF_DMPS_level_0_'
-    
-    df_lvl0_dmps = load_and_process_data(filename, folder_path, start_date, end_date)
-    
-    conc_columns = [col for col in df_lvl0_dmps.columns if col.startswith('conc')]
-    d_m_columns = [col for col in df_lvl0_dmps.columns if col.startswith('dm')]
-    
-    concentrations = df_lvl0_dmps[conc_columns].to_numpy()
-    d_m_data = df_lvl0_dmps[d_m_columns].iloc[0].to_numpy()
-    
-    # Give d_m_data (output channels) to DMPS properties
-    DMPS_prop['d_m_data'] = d_m_data
-    
-    temperatures = df_lvl0_dmps['t_sam'].to_numpy()
-    pressures = df_lvl0_dmps['p_sam'].to_numpy()
-    datetimes = df_lvl0_dmps.index.values
-    
-    # Convert concentration into counts
-    sample_flow = DMPS_prop['Qa'] * lpm_to_m3s * 1e6
-    counts = concentrations * sample_flow * DMPS_prop['CPC_measuring_time']
-    
-    dataset = MeasurementDataset(datetimes, d_m_data, counts, 'counts', temperatures, pressures)
-    
-    
-    
-    # =============================================================================
-    # Set up the inversion model
-    # =============================================================================
-    
-    # Mobility diameters for the inverted PSD
-    # inversion_grid = np.geomspace(1e-9, 2500e-9, num=50)
-    
-    # DMPS_prop['charging_model'] = 'LYF-interp-flux'
-    DMPS_prop['charging_model'] = 'LYF-interp'
-    # DMPS_prop['charging_model'] = 'Wiedensohler'
-    DMPS_prop['max_charge'] = 4
-    
-    DMPS = DifferentialMobilityParticleSizer(DMPS_prop)#, inversion_grid=inversion_grid)
-    DMPS.set_charger_properties(1.35e-4, 1.60e-4)#, 1)
-    DMPS.set_operating_conditions(290, 101325)
-    
-    # Configure the prior
-    expected_value = 0
-    correlation_length = 8 / 16
-    log_standard_deviation = 1.5
-    prior = smoothness_prior(DMPS.d_m, expected_value,
-                             correlation_length, log_standard_deviation
+raw_data = pd.read_csv('UEF_DMPS_lvl0.txt.gz', sep='\t')
+
+# # select only some measurements
+# raw_data = raw_data.iloc[3000:3500]
+
+concentrations = raw_data.filter(like="conc_").to_numpy()
+d_m_data = raw_data.filter(like="dmed_").iloc[0].to_numpy()
+
+temperatures = raw_data['t_sam'].to_numpy()
+pressures = raw_data['p_sam'].to_numpy()
+pressures *= 1e2  # Convert from hPa to Pa
+datetimes = pd.to_datetime(raw_data["start_time"], utc=True).dt.tz_convert(None).to_numpy()
+
+# Give d_m_data (output channels) to DMPS properties
+DMPS_prop['d_m_data'] = d_m_data
+
+# Convert concentration into counts
+sample_flow = DMPS_prop['Qa'] * lpm_to_m3s * 1e6
+counts = concentrations * sample_flow * DMPS_prop['CPC_measuring_time']
+
+dataset = MeasurementDataset(datetimes, d_m_data, counts, 'counts', temperatures, pressures)
+
+
+# =============================================================================
+# Set up the inversion model
+# =============================================================================
+
+DMPS_prop['charging_model'] = 'LYF-interp'
+DMPS_prop['max_charge'] = 10
+
+DMPS = DifferentialMobilityParticleSizer(DMPS_prop, n_bins=70)
+
+# Optionally, set these here if you don't plan to update them during inversion
+DMPS.set_charger_properties(1.35e-4, 1.60e-4)
+
+
+
+# =============================================================================
+# Carry out inversion
+# =============================================================================
+
+# See below examples on how to select a subset of the data using datetimes
+# The example dataset covers the whole of December 2024
+
+inv_dataset = invert_dataset(DMPS,
+                             # dataset,
+                             dataset.between_times("2024-12-09", "2024-12-12"),
+                             # dataset.between_times("2024-12-01T00:00:00", "2024-12-03T12:00:00"),
+                             marginalize_ion_mobility=True,
+                             parallel=True,
                              )
-    
-    # Storage for the inversion results
-    inv_dataset = InversionDataset(datetimes)
-    
-    
-    # =============================================================================
-    # Carry out inversion
-    # =============================================================================
-    
-    if DO_PARALLEL:
-        
-        # Wrapper functions to get the iteration number for parallel execution
-        def run_inversion(args):
-            idx, measurement = args
-            DMPS.set_operating_conditions(measurement.temperature, measurement.pressure * 1e2)
-            result = invert_psd(DMPS, measurement, prior,
-                                marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY,
-                                )
-            return idx, result
-        
-        # Set the number of processes
-        n_cpus = psutil.cpu_count(logical=False)
-        n_jobs = max(1, n_cpus - 1)  # Leave at least one thread free for other use
-        
-        # Collect all measurements into a list
-        all_measurements = [dataset[i] for i in range(len(dataset))]
 
-        # Prepare all measurements for parallel execution
-        # args = list(enumerate(all_measurements))
-        
-        # Sorting the measurements by temperature and pressure improves cache locality
-        # when updating operating conditions in the DMPS model. This can speed up inversion
-        # due to reuse of cached results (see the @lru_cache usage in particlesizers.py).
-        # The rounding ensures that measurements with similar conditions are grouped together.
-        args = sorted(
-            enumerate(all_measurements),
-            key=lambda x: (int(round(x[1].temperature / 2.0) * 2),
-                           int(round(x[1].pressure * 1e2 / 25.0) * 25))
-            )
 
-        # Important: the 'loky' backend makes copies (via pickling) of the objects each worker
-        # needs, so each process receives its own copy of, for example, the DMPS and therefore
-        # it is safe to mutate the DMPS inside 'run_inversion'. With a different backend this
-        # may not be the case.
-        results = Parallel(n_jobs=n_jobs, backend='loky')(
-            delayed(run_inversion)(args) for args in tqdm(args)
-            )
-        
-        # Store results
-        for idx, result in results:
-            inv_dataset.assign_result(idx, result)
-    
-    else:
-        
-        for idx, measurement in enumerate(tqdm(measurement_loader(dataset), total=len(dataset))):
-            DMPS.set_operating_conditions(measurement.temperature, measurement.pressure * 1e2)
-            result = invert_psd(DMPS, measurement, prior,
-                                marginalize_ion_mobility=MARGINALIZE_ION_MOBILITY
-                                )
-            inv_dataset.assign_result(idx, result)
-    
-    
-    
-    #%%
-    # =============================================================================
-    # Plot the results
-    # =============================================================================
-    
-    # How many percent of the posterior should the credible intervals cover
-    CI_coverage = 95
-    
-    # Summarize the posterior of each measurement
-    means, CI_lower, CI_upper = inv_dataset.posterior_summary(coverage=CI_coverage)
-    d_m = inv_dataset.results[0].d_m  # d_m of the stored results
-    
-    fig, axs = plt.subplots(nrows=2, ncols=1, num=10, clear=True)
-    binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
-    
-    Z = means.T / binwidth
-    
-    plt_N_min = np.min(Z)
-    plt_N_max = np.max(Z)
-    im = axs[0].pcolormesh(*np.meshgrid(datetimes, d_m * 1e9), Z,
-                       norm=colors.LogNorm(vmin=plt_N_min, vmax=plt_N_max),
-                       cmap='viridis')
-    
-    axs[0].set_yscale('log')
-    axs[0].yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
-    axs[0].set_yticks([d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
-    
-    axs[0].set_ylabel('Particle diameter (nm)')
-    axs[0].set_xlabel('Time')
-    axs[0].set_title('Inverted particle size distribution of a DMPS measurement')
-    
-    cbar = fig.colorbar(im, ax=axs[0],
-                         label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$')
-    
-    # Plot uncertainties
-    CI_width = CI_upper - CI_lower
-    plotval = CI_width.T / binwidth
-    plt_CIw_min = np.min(plotval)
-    plt_CIw_max = np.max(plotval)
-    im = axs[1].pcolormesh(*np.meshgrid(datetimes, d_m * 1e9), plotval,
-                       norm=colors.LogNorm(vmin=plt_CIw_min, vmax=plt_CIw_max),
-                       cmap='Blues_r')
-    
-    axs[1].set_yscale('log')
-    axs[1].yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
-    axs[1].set_yticks([d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
-    
-    axs[1].set_ylabel('Particle diameter (nm)')
-    axs[1].set_xlabel('Time')
-    axs[1].set_title(f'Estimate uncertainty (width of the {CI_coverage} % credible intervals)')
-                
-    cbar = fig.colorbar(im, ax=axs[1],
-                        label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$')
-    
-    fig.tight_layout()
-    plt.show()
-    
-    
-    # Variance reduction plot
-    prior_variance = np.diag(prior['covariance'])[inv_dataset.results[0].sl]
-    post_variance = inv_dataset.posterior_variance()
-    VR = np.log10(post_variance / prior_variance)
-    
-    fig, ax = plt.subplots(nrows=1, ncols=1, num=100, clear=True)
-    im = ax.pcolormesh(*np.meshgrid(datetimes, d_m * 1e9), VR.T,
-                       cmap='Blues_r')
-    cbar = fig.colorbar(im, ax=ax, label=r'$\log_{10}(\sigma_\mathrm{post}^2 / \sigma_\mathrm{prior}^2)$')
-    
-    ax.set_yscale('log')
-    ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
-    ax.set_yticks([d_m[0] * 1e9, 10, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
-    ax.set_ylabel('Particle diameter (nm)')
-    ax.set_xlabel('Time')
-    ax.set_title('log variance reduction')
-    
-    fig.tight_layout()
-    plt.show()
-    
-    
-    # Example measurements
-    fig = plt.figure(num=12, clear=True)
-    gs = gridspec.GridSpec(3, 2, height_ratios=[1, 0.05, 1])  # middle row is a gap for a 
-    axs = np.empty((2, 2), dtype=object)
-    axs = [
-        fig.add_subplot(gs[0, 0]),
-        fig.add_subplot(gs[0, 1]),
-        fig.add_subplot(gs[2, 0]),
-        fig.add_subplot(gs[2, 1]),
-        ]
-    
-    idx_1 = 10
-    idx_2 = 100
-    # Convert numpy datetimes to Python datetimes for easier formatting
-    datetime_1 = inv_dataset.datetimes[idx_1].astype('datetime64[s]').item()
-    datetime_2 = inv_dataset.datetimes[idx_2].astype('datetime64[s]').item()
-    
-    plot_posterior_summary(axs[0], inv_dataset.results[idx_1], CI_coverage)
-    axs[0].set_yscale('linear')
-    axs[0].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
-    axs[0].grid('on')
-    axs[0].set_title(
-        f'Size distribution on {datetime_1.date()} at {datetime_1.time()}',
-        loc='center'
-        )
-    
-    
-    plot_posterior_summary(axs[2], inv_dataset.results[idx_2], CI_coverage)
-    axs[2].set_yscale('linear')
-    axs[2].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
-    axs[2].grid('on')
-    axs[2].set_title(
-        f'Size distribution on {datetime_2.date()} at {datetime_2.time()}',
-        loc='center'
-        )
-    
-    Ntot_samples_1 = inv_dataset.results[idx_1].Ntot_samples()
-    Ntot_samples_2 = inv_dataset.results[idx_2].Ntot_samples()
-    plot_Ntot_histogram(axs[1], Ntot_samples_1)
-    plot_Ntot_histogram(axs[3], Ntot_samples_2)
-    
-    line = Line2D([0.075, 0.95], [0.50, 0.50], transform=fig.transFigure,
-                  color='black', linewidth=4)
-    fig.add_artist(line)
-    
-    fig.tight_layout()
-    plt.show()
 
-    
-    fig, ax = plt.subplots(1, 1, num=999, clear=True)
-    plot_datafit(ax, DMPS, dataset[idx_1].output, inv_dataset.results[idx_1])
+#%%
+# =============================================================================
+# Plot the results
+# =============================================================================
+
+# How many percent of the posterior should the credible intervals cover
+CI_coverage = 95
+
+# inv_dataset.set_reporting_range('full')
+# inv_dataset.set_reporting_range('measured')  # This is set by default
+
+
+
+# Figure 1: Estimates and uncertainties ---------------------------------------
+fig, axs = plt.subplots(nrows=3, ncols=1, num=1, clear=True)
+
+# Compute summary statistics
+medians, CI_lower, CI_upper = inv_dataset.posterior_summary(coverage=CI_coverage)
+
+d_m = inv_dataset.results[0].d_m  # d_m of the stored results
+binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
+
+# Subplot 1: Posterior medians
+Z = medians.T / binwidth
+plot_timeseries(axs[0], inv_dataset.datetimes, d_m, Z,
+                cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
+                )
+axs[0].set_title(r'Posterior median of $\mathbf{N}$')
+
+# Subplot 2: Uncertainties as relative CI width
+# Safeguard for zero/near-zero lower bounds
+eps = 0.0001
+W = ((CI_upper - CI_lower) / (medians + eps)).T
+
+plot_timeseries(axs[1], inv_dataset.datetimes, d_m, W,
+                # log_color_scale=False,
+                cbar_label=fr'Relative {CI_coverage} % HDI width',
+                cmap='inferno',
+                # vmin=0.2,
+                # vmax=140,
+                )
+axs[1].set_title(fr'Uncertainty (relative {CI_coverage} % HDI width)')
+
+
+# Subplot 3: PSD estimate with uncertainty as the alpha channel
+norm_psd = colors.LogNorm(vmin=np.nanquantile(Z, 0.001),
+                           vmax=np.nanmax(Z))
+cmap_psd = mpl.colormaps['viridis']
+
+# Choose values for W
+W_low = 1  # width below which estimate is ''accurate'' (alpha == 1)
+W_high = 10  # width above which estimate is ''inaccurate'' (alpha == 0)
+W_clipped = np.clip(W, W_low, W_high)
+alpha = 1 - (W_clipped - W_low) / (W_high - W_low)
+rgba = cmap_psd(norm_psd(Z))
+rgba[..., -1] = alpha
+
+# Draw empty mesh, then set RGBA facecolors
+im2 = plot_timeseries(axs[2], inv_dataset.datetimes, d_m, Z,
+                      cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
+                      )
+im2.set_cmap(None)
+im2.set_norm(None)
+im2.set_array(None)
+im2.set_facecolors(rgba.reshape(-1, 4))
+
+# Colorbar from PSD only (not alpha)
+sm = plt.cm.ScalarMappable(norm=norm_psd, cmap=cmap_psd)
+sm.set_array([])
+axs[2]._colorbar.update_normal(sm)
+axs[2].set_title('Posterior median with relative uncertainty (= transparency)')
+
+fig.tight_layout()
+plt.show()
+
+
+#%%
+# Figure 2: Variance reduction and posterior CI width plots -------------------
+fig, axs = plt.subplots(nrows=2, ncols=1, num=2, clear=True)
+
+prior = smoothness_prior(d_m, 0, 8/16, 1.5)
+prior_variance = np.diag(prior['covariance'])
+post_variance = inv_dataset.posterior_variance()
+VR = np.log10(post_variance / prior_variance).T
+
+plot_timeseries(axs[0], inv_dataset.datetimes, d_m, VR,
+                log_color_scale=False,
+                cbar_label=r'$\log_{10}(\sigma_\mathrm{post}^2 / \sigma_\mathrm{prior}^2)$',
+                cmap='Blues_r'
+                )
+axs[0].set_title('log variance reduction')
+
+# Plot uncertainties as CI width
+CI_width = CI_upper - CI_lower
+plotval = CI_width.T / binwidth
+vmin = np.quantile(plotval.flatten(), 0.001)
+plot_timeseries(axs[1], inv_dataset.datetimes, d_m, plotval,
+                # log_color_scale=False,
+                cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
+                cmap='Blues_r'
+                )
+axs[1].set_title(f'Estimate uncertainty (width of the {CI_coverage} % credible intervals)')
+
+fig.tight_layout()
+plt.show()
+
+
+
+# Figure 3: Analyze single time instants in more detail -----------------------
+fig = plt.figure(num=3, clear=True)
+
+gs = gridspec.GridSpec(3, 2, height_ratios=[1, 0.05, 1])
+axs = np.empty((2, 2), dtype=object)
+axs = [
+    fig.add_subplot(gs[0, 0]),
+    fig.add_subplot(gs[0, 1]),
+    fig.add_subplot(gs[2, 0]),
+    fig.add_subplot(gs[2, 1]),
+    ]
+
+# Choose two measurements at random
+idx_1, idx_2 = np.random.choice(len(inv_dataset.datetimes), 2)
+
+# Convert numpy datetimes to Python datetimes for easier formatting
+datetime_1 = inv_dataset.datetimes[idx_1].astype('datetime64[s]').item()
+datetime_2 = inv_dataset.datetimes[idx_2].astype('datetime64[s]').item()
+
+plot_posterior_summary(axs[0], inv_dataset.results[idx_1], CI_coverage)
+axs[0].set_yscale('linear')
+axs[0].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
+axs[0].grid('on')
+axs[0].set_title(
+    f'Size distribution on {datetime_1.date()} at {datetime_1.time()}',
+    loc='center'
+    )
+
+plot_posterior_summary(axs[2], inv_dataset.results[idx_2], CI_coverage)
+axs[2].set_yscale('linear')
+axs[2].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
+axs[2].grid('on')
+axs[2].set_title(
+    f'Size distribution on {datetime_2.date()} at {datetime_2.time()}',
+    loc='center'
+    )
+
+Ntot_samples_1 = inv_dataset.results[idx_1].Ntot_samples()
+Ntot_samples_2 = inv_dataset.results[idx_2].Ntot_samples()
+plot_Ntot_histogram(axs[1], Ntot_samples_1)
+plot_Ntot_histogram(axs[3], Ntot_samples_2)
+
+line = Line2D([0.075, 0.95], [0.50, 0.50], transform=fig.transFigure,
+              color='black', linewidth=4)
+fig.add_artist(line)
+
+fig.tight_layout()
+plt.show()
+
+
+# Figure 4: Total particle numbers --------------------------------------------
+fig, ax = plt.subplots(nrows=1, ncols=1, num=4, clear=True)
+
+Ntots, Ntots_CI_low, Ntots_CI_high = inv_dataset.Ntot_summary(coverage=95)
+
+ax.fill_between(inv_dataset.datetimes,
+                Ntots_CI_low,
+                Ntots_CI_high,
+                alpha=0.25,
+                facecolor='C0',
+                label=f'{CI_coverage} % credible interval'
+                )
+ax.plot(inv_dataset.datetimes, Ntots, label=r'Median $N_\mathrm{tot}$')
+ax.set_xlabel('Time')
+ax.set_ylabel('Ntot')
+dm0 = 10**(np.log10(inv_dataset.results[0].d_m[0]) - 0.5 * binwidth) * 1e9
+dm1 = 10**(np.log10(inv_dataset.results[0].d_m[-1]) + 0.5 * binwidth) * 1e9
+ax.set_title(f'Total particle numbers between [{dm0 : .1f}, {dm1 : .1f}] nm')
+ax.grid('on')
+ax.legend()
+
+
+
+# Figure 5: Check the datafit -------------------------------------------------
+fig, ax = plt.subplots(1, 1, num=5, clear=True)
+
+DMPS.set_operating_conditions(dataset[idx_1].temperature, dataset[idx_1].pressure)
+plot_datafit(ax, DMPS, dataset[idx_1].output, inv_dataset.results[idx_1])
