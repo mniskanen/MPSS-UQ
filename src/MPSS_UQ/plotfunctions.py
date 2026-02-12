@@ -23,7 +23,7 @@ def plot_psd(ax, d_m, N, *args, **kwargs):
     ax.legend()
 
 
-def plot_posterior_summary(ax, result, CI_coverage=95):
+def plot_posterior_summary(ax, result, CI_coverage=95, color='C0'):
     ''' Plot a simple posterior summary (mean value and credible intervals).
     Input:
         result - instance of an InversionResult
@@ -36,13 +36,13 @@ def plot_posterior_summary(ax, result, CI_coverage=95):
                     CI_upper / result.binwidth,
                     CI_lower / result.binwidth,
                     alpha=0.25,
-                    facecolor='C0',
+                    facecolor=color,
                     label=f'{CI_coverage} % credible interval'
                     )
     
     label = 'Posterior median'
     
-    plot_psd(ax, result.d_m, N=N_median, linestyle='-', color='C0', label=label)
+    plot_psd(ax, result.d_m, N=N_median, linestyle='-', color=color, label=label)
     
     ax.legend()
 
@@ -51,6 +51,7 @@ def plot_timeseries(ax, datetimes, d_m, Z,
                     cmap='viridis',
                     log_color_scale=True,
                     vmin=None, vmax=None,  # manual limits
+                    show_cbar=True,
                     cbar_label=None,
                     ):
     '''
@@ -109,8 +110,9 @@ def plot_timeseries(ax, datetimes, d_m, Z,
         _norm = colors.Normalize(vmin=vmin, vmax=vmax)
     
     im = ax.pcolormesh(date_edges, d_m_edges, Z_masked, cmap=cmap, norm=_norm, shading='auto')
-    cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
-    ax._my_colorbar = cbar  # attach the colorbar for easy reference later
+    if show_cbar:
+        cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
+        ax._my_colorbar = cbar  # attach the colorbar for easy reference later
     ax.set_yscale('log')
     ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
     ax.set_yticks([d_m[0] * 1e9, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
@@ -160,7 +162,7 @@ def plot_system_matrix(ax, DMPS, title=None):
     ax.set_xscale('log')
     ax.set_yscale('log')
     ax.set_aspect('equal', adjustable='box')
-    # cbar = ax.figure.colorbar(im, ax=ax, label='Matrix values')
+    cbar = ax.figure.colorbar(im, ax=ax, label='Matrix values')
 
 
 def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverage=95):
@@ -251,7 +253,7 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
     ax.set_ylabel('Counts (#)')
 
 
-def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None):
+def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None, color='C0'):
     ''' Plot a histogram and some credible intervals of the sampled Ntot. '''
     
     [Ntot_low95, Ntot_high95] = highest_density_interval(Ntots, 0.95)
@@ -264,7 +266,7 @@ def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None):
     
     counts, bins = np.histogram(Ntots, bins=100, range=(plt_lo, plt_hi), density=True)
     width = bins[1] - bins[0]
-    ax.bar(bins[1:] - width, counts, width=width, edgecolor="white", color='C0', alpha=0.8)
+    ax.bar(bins[1:] - width, counts, width=width, edgecolor="white", color=color, alpha=0.8)
     ymin, ymax = ax.get_ylim()
     
     ax.vlines(x=[Ntot_low95, Ntot_high95],

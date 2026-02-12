@@ -193,16 +193,15 @@ def invert_dataset(
     def _solve_one(task: Tuple[int, object]):
         idx, meas = task
         # Set operating conditions per measurement
-        s = sizer  # each worker gets its own copy with 'loky'
-        s.set_operating_conditions(meas.temperature, meas.pressure)
+        sizer.set_operating_conditions(meas.temperature, meas.pressure)
         res = invert_psd(
-            s, meas, prior=prior,
+            sizer, meas, prior=prior,
             marginalize_ion_mobility=marginalize_ion_mobility,
             marginalize_ion_ratio=marginalize_ion_ratio,
             marginalization_grid=marginalization_grid,
             num_samples=num_samples,
             use_mcmc=use_mcmc,
-        )
+            )
         return idx, res
 
     # Decide concurrency
@@ -450,7 +449,7 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
         
     else:
         if sizer.charging_model_name != 'LYF-interp':
-            raise ValueError("Use charger 'LYF-interp' for fastest marginalization of mobility")
+            raise ValueError("Use charger 'LYF-interp' for marginalization of mobility")
         n_ion_ratios = 1
         ion_ratio = 1
     

@@ -1,24 +1,19 @@
 # -*- coding: utf-8 -*-
 
+from MPSS_UQ.measurement_data import MeasurementDataset
+from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer, lpm_to_m3s
+from MPSS_UQ.inversion import invert_dataset, smoothness_prior
+from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
+                                   plot_timeseries)
+
 import yaml
 import numpy as np
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-import matplotlib.ticker as tck
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
-import zipfile
-
-from tqdm import tqdm
-
-from MPSS_UQ.measurement_data import MeasurementDataset
-from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer, lpm_to_m3s
-from MPSS_UQ.inversion import invert_dataset, invert_psd, smoothness_prior
-from MPSS_UQ.inversion_results import InversionDataset, highest_density_interval
-from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
-                                   plot_timeseries)
 
 
 # =============================================================================
