@@ -112,8 +112,22 @@ class DifferentialMobilityParticleSizer:
         # Preallocate the system matrix
         self.system_matrix = np.zeros((self.d_m_data.shape[0], self.d_m.shape[0]))
         
+        # Validate CPC measuring time(s)
+        meas_time = properties['CPC_measuring_time']
+        if np.isscalar(meas_time):
+            # DMPS-like case: same measurement time for all channels
+            measuring_time = np.full_like(self.d_m_data, meas_time, dtype=float)
+        else:
+            # SMPS-like case: measurement time can vary between channels
+            arr = np.asarray(meas_time, dtype=float)
+            if arr.shape != self.d_m_data.shape:
+                raise ValueError("Length of CPC_measuring_time must "
+                                 "match number of measured channels "
+                                 f"({len(self.d_m_data)}).")
+            measuring_time = arr
+        
         # Initialize the CPC
-        self.CPC = CondensationParticleCounter(self.d_m, properties)
+        self.CPC = CondensationParticleCounter(self.d_m, measuring_time, properties)
         
         self.operating_conditions_set = False
         
@@ -262,7 +276,7 @@ class DifferentialMobilityParticleSizer:
         
         # Change output from concentration to counts
         if self.CPC.output_type == 'counts':
-            self.system_matrix *= self.CPC.sampled_volume
+            self.system_matrix *= self.CPC.sampled_volume[:, np.newaxis]
     
     
     def compute_DMA_characteristic_values(self):
@@ -511,20 +525,20 @@ class DifferentialMobilityParticleSizer:
 
 class CondensationParticleCounter:
     
-    def __init__(self, d_m, properties):
+    def __init__(self, d_m, measuring_time, properties):
         
         self.d_m = d_m
         self.output_type = properties['CPC_output_type']  # counts or concentration
-        self.measuring_time = properties['CPC_measuring_time']  # Per one output bin (s)
+        
+        self.measuring_time = measuring_time  # For each output channel (s)
         
         self.sample_flow = properties['Qa'] * lpm_to_m3s * 1e6
         self.sampled_volume = self.measuring_time * self.sample_flow
         
-        # Choose which function to use to calculate the counting efficiency
-        
         # returns None if key not found
         custom_function = properties.get('custom_CPC_count_eff_function')
         
+        # Choose which function to use to calculate the counting efficiency
         if custom_function:
             self.counting_efficiency = custom_function(self.d_m)
             self.counting_efficiency_type = 'custom'
