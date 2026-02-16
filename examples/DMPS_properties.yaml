@@ -14,6 +14,7 @@ UEF-A20:     # configuration name
   center_voltage_sign: positive  # polarity of center electrode
   
   # CPC properties
+  CPC_Qsample: 1           # CPC sample flow rate [L/min]
   CPC_measuring_time: 5    # measurement time per one output channel [s]
   CPC_output_type: counts  # output type (counts/concentration)
   # coefficients for using the ACTRIS type counting efficiency equation:

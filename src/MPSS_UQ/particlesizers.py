@@ -532,7 +532,7 @@ class CondensationParticleCounter:
         
         self.measuring_time = measuring_time  # For each output channel (s)
         
-        self.sample_flow = properties['Qa'] * lpm_to_m3s * 1e6
+        self.sample_flow = properties['CPC_Qsample'] * lpm_to_m3s * 1e6
         self.sampled_volume = self.measuring_time * self.sample_flow
         
         # returns None if key not found
