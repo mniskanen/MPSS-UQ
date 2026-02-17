@@ -83,36 +83,36 @@ class MeasurementDataset:
     
     def _return_single_measurement(self, idx: int):
         
-            measurement = Measurement(
-                self.datetimes[idx],
-                self.d_m_data,
-                self.output_vector[idx],
-                self.output_type,
-                self.temperatures[idx],
-                self.pressures[idx],
-                )
-            measurement.preprocess()
-            return measurement
+        measurement = Measurement(
+            self.datetimes[idx],
+            self.d_m_data,
+            self.output_vector[idx],
+            self.output_type,
+            self.temperatures[idx],
+            self.pressures[idx],
+            )
+        measurement.preprocess()
+        return measurement
     
     
     def _return_subset(self, indices):
-            """
-            Build a new dataset with a subset of rows (as a view when possible).
-            `indices` can be a slice, a list/ndarray of ints, or a boolean mask.
-            """
-            new_datetimes   = self.datetimes[indices]
-            new_outputs     = self.output_vector[indices]
-            new_temps       = self.temperatures[indices]
-            new_pressures   = self.pressures[indices]
-    
-            return MeasurementDataset(
-                new_datetimes,
-                self.d_m_data,
-                new_outputs,
-                self.output_type,
-                new_temps,
-                new_pressures,
-                )
+        """
+        Build a new dataset with a subset of rows (as a view when possible).
+        `indices` can be a slice, a list/ndarray of ints, or a boolean mask.
+        """
+        new_datetimes   = self.datetimes[indices]
+        new_outputs     = self.output_vector[indices]
+        new_temps       = self.temperatures[indices]
+        new_pressures   = self.pressures[indices]
+
+        return MeasurementDataset(
+            new_datetimes,
+            self.d_m_data,
+            new_outputs,
+            self.output_type,
+            new_temps,
+            new_pressures,
+            )
     
     
     def between_times(self, start, end, closed="both"):
@@ -135,21 +135,49 @@ class MeasurementDataset:
         return self._return_subset(mask)
     
     
-    def __getitem__(self, idx: Union[int, slice, Sequence[int], np.ndarray]):
-            """
-            - int -> Measurement
-            - slice / list / ndarray / boolean mask -> MeasurementDataset
-            """
-            if isinstance(idx, (int, np.integer)):
-                # Support negative indices too (NumPy/Python semantics)
-                if idx < 0:
-                    idx += len(self)
-                if idx < 0 or idx >= len(self):
-                    raise IndexError("Index out of range.")
-                return self._return_single_measurement(idx)
+    def at_time(self, time, tolerance=np.timedelta64(1, 's')):
+        """
+        Return the Measurement whose timestamp is closest to the requested time.
+        A nearest-neighbour match is always used, and the caller may specify
+        a maximum allowed time difference (default: 1 second).
+        """
+        # Convert input to numpy datetime64
+        target = np.datetime64(time)
     
-            # Slice, list, ndarray, or boolean mask -> subset dataset
-            return self._return_subset(idx)
+        # Ensure stored datetimes are numpy datetime64
+        dt = self.datetimes
+        if not np.issubdtype(dt.dtype, np.datetime64):
+            dt = dt.astype("datetime64[ns]")
+    
+        # Compute absolute time differences
+        diffs = np.abs(dt - target)
+        idx = int(np.argmin(diffs))
+    
+        # Enforce tolerance
+        if diffs[idx] > tolerance:
+            raise ValueError(
+                f"No measurement within {tolerance} of requested time {time} "
+                f"(nearest difference is {diffs[idx]})."
+            )
+    
+        return self._return_single_measurement(idx)
+    
+    
+    def __getitem__(self, idx: Union[int, slice, Sequence[int], np.ndarray]):
+        """
+        - int -> Measurement
+        - slice / list / ndarray / boolean mask -> MeasurementDataset
+        """
+        if isinstance(idx, (int, np.integer)):
+            # Support negative indices too (NumPy/Python semantics)
+            if idx < 0:
+                idx += len(self)
+            if idx < 0 or idx >= len(self):
+                raise IndexError("Index out of range.")
+            return self._return_single_measurement(idx)
+
+        # Slice, list, ndarray, or boolean mask -> subset dataset
+        return self._return_subset(idx)
 
 
 def generate_DMPS_measurement(DMPS_prop,

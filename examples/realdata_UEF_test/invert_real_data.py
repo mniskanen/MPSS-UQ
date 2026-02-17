@@ -270,5 +270,8 @@ ax.legend()
 # Figure 5: Check the datafit -------------------------------------------------
 fig, ax = plt.subplots(1, 1, num=5, clear=True)
 
-DMPS.set_operating_conditions(dataset[idx_1].temperature, dataset[idx_1].pressure)
-plot_datafit(ax, DMPS, dataset[idx_1].output, inv_dataset.results[idx_1])
+# Take the measurement matching the inverted one
+meas = dataset.at_time(inv_dataset.datetimes[idx_1])
+
+DMPS.set_operating_conditions(meas.temperature, meas.pressure)
+plot_datafit(ax, DMPS, meas.output, inv_dataset.results[idx_1])
