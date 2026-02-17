@@ -12,10 +12,10 @@ from MPSS_UQ.chargingmodels import LYFChargingModel, LYFInterpolator, LYFFluxInt
 
 def test_interpolation_accuracy():
     
-    n_bins = 35
+    n_bins = 60
     
     d_m = np.geomspace(1e-9, 2.5e-6, n_bins)
-    charges_output = np.arange(-8, 8 + 1)
+    charges_output = np.arange(-10, 10 + 1)
     n_charges = charges_output.shape[0]
     
     # Initialize the different charger models
@@ -34,7 +34,7 @@ def test_interpolation_accuracy():
                                       max_modelled_charge=25
                                       )
     
-    n_tests = 10
+    n_tests = 15
     time_direct = 0
     time_interp_1 = 0
     time_interp_2 = 0
@@ -95,7 +95,8 @@ def test_interpolation_accuracy():
                 plt.loglog(d_m, cp_direct[idx], 'b-', label=label)
                 label = 'pos. charges, interp' if k == 1 else None
                 plt.loglog(d_m, cp_interp_1[idx], 'k--', label=label)
-
+        plt.xlim([d_m[0], d_m[-1]])
+        plt.ylim([1e-9, 1.05])
         plt.legend()
         plt.pause(0.1)
         
@@ -116,7 +117,8 @@ def test_interpolation_accuracy():
                 plt.loglog(d_m, cp_direct[idx], 'b-', label=label)
                 label = 'pos. charges, interp' if k == 1 else None
                 plt.loglog(d_m, cp_interp_2[idx], 'k--', label=label)
-
+        plt.xlim([d_m[0], d_m[-1]])
+        plt.ylim([1e-9, 1.05])
         plt.legend()
         plt.pause(0.1)
         
@@ -125,7 +127,6 @@ def test_interpolation_accuracy():
         for i in range(n_charges):
             denom = np.abs(cp_direct[i]) + eps
             offset = (test * n_charges + i) * n_bins
-
             rel_errors_1[offset : offset + n_bins] = np.abs(cp_direct[i] - cp_interp_1[i]) / denom
             rel_errors_2[offset : offset + n_bins] = np.abs(cp_direct[i] - cp_interp_2[i]) / denom
     
@@ -138,9 +139,9 @@ def test_interpolation_accuracy():
     print(f'99th perc. relative error (flux interp): {p99_rel_error_1 * 100 : .2g} %')
     print(f'99th perc. relative error (cp interp): {p99_rel_error_2 * 100 : .2g} %\n')
     
-    assert avg_rel_error_1 < 0.05, \
+    assert avg_rel_error_1 < 0.01, \
         'Average mean absolute error between direct and flux-interpolated solutions too large'
-    assert avg_rel_error_2 < 0.05, \
+    assert avg_rel_error_2 < 0.01, \
         'Average mean absolute error between direct and cp-interpolated solutions too large'
     
     print(

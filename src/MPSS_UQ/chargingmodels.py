@@ -748,7 +748,7 @@ class LYFInterpolator:
         scaled_pos_mob = (data['pos_ion_mobility_eval'] * 1e4).astype(np.float32)
         scaled_neg_mob = (data['neg_ion_mobility_eval'] * 1e4).astype(np.float32)
         
-        eps = np.finfo(data['charge_probabilities'].dtype).tiny
+        eps = 1e-15
         log_charge_probabilities = np.log10(np.clip(data['charge_probabilities'], eps, None))
         
         # Move the charge dimension last for RegularGridInterpolator
@@ -758,7 +758,7 @@ class LYFInterpolator:
         self.interpolator = RegularGridInterpolator(
             (log_diam, scaled_pos_mob, scaled_neg_mob),
             values,
-            # method='pchip'  # NOTE: this is more accurate than the default, but slow
+            method='cubic'
             )
 
 
@@ -818,7 +818,7 @@ class LYFFluxInterpolator:
         scaled_pos_mob = data['pos_ion_mobility_eval'] * 1e4
         scaled_neg_mob = data['neg_ion_mobility_eval'] * 1e4
         
-        eps = np.finfo(data['flux_coeffs'].dtype).tiny
+        eps = 1e-30
         log_flux_coeffs = np.log10(np.clip(data['flux_coeffs'], eps, None))
         
         # Move the charge dimension last for RegularGridInterpolator
@@ -829,10 +829,12 @@ class LYFFluxInterpolator:
         self.interpolator_neg_ion = RegularGridInterpolator(
             (log_diam, scaled_pos_mob, scaled_neg_mob),
             values_neg,
+            method='cubic'
             )
         self.interpolator_pos_ion = RegularGridInterpolator(
             (log_diam, scaled_pos_mob, scaled_neg_mob),
             values_pos,
+            method='cubic'
             )
 
 
