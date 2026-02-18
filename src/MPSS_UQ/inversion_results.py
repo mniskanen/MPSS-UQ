@@ -99,10 +99,10 @@ class InversionResult:
             self.input_mode = 'gaussian-log10'
         
         elif input2:
-            self.post_samples = post_samples
+            self.post_samples = post_samples.astype(np.float32, copy=False)
             self.input_mode = 'samples'
             if ion_property_samples is not None:
-                self.ion_property_samples = ion_property_samples
+                self.ion_property_samples = ion_property_samples.astype(np.float32, copy=False)
         
         # Store the slice that was used to get the reported size range from the full inverted
         # size range

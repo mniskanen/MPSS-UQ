@@ -557,6 +557,10 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
         
         start += count
     
+    # Store as single precision samples to save space
+    posterior_mixture_samples = posterior_mixture_samples.astype(np.float32, copy=False)
+    ion_property_samples = ion_property_samples.astype(np.float32, copy=False)
+    
     return posterior_mixture_samples, ion_property_samples
 
 
