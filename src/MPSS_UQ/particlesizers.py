@@ -152,8 +152,11 @@ class DifferentialMobilityParticleSizer:
     
     
     def set_operating_conditions(self, temperature, pressure):
-        ''' Set the operating temperature and pressure, then update all parts of the MPSS these
-        values affect. Finally assemble the updated system matrix.
+        ''' Set the operating temperature and pressure, and update assemble the updated
+        system matrix.
+        Note: currently the charging models all assume the temperature is constant at 298.15 K,
+        and hence the charging probability does not get updated here.
+        
         Input:
             temperature - in K
             pressure - in Pa

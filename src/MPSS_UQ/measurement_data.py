@@ -135,31 +135,34 @@ class MeasurementDataset:
         return self._return_subset(mask)
     
     
-    def at_time(self, time, tolerance=np.timedelta64(1, 's')):
+    def at_time(self, time, tolerance=60):
         """
         Return the Measurement whose timestamp is closest to the requested time.
         A nearest-neighbour match is always used, and the caller may specify
-        a maximum allowed time difference (default: 1 second).
+        a maximum allowed time difference in seconds (default: 60 seconds).
         """
         # Convert input to numpy datetime64
         target = np.datetime64(time)
-    
+        
+        # Set the tolerance as seconds
+        tolerance=np.timedelta64(tolerance, 's')
+        
         # Ensure stored datetimes are numpy datetime64
         dt = self.datetimes
         if not np.issubdtype(dt.dtype, np.datetime64):
             dt = dt.astype("datetime64[ns]")
-    
+        
         # Compute absolute time differences
         diffs = np.abs(dt - target)
         idx = int(np.argmin(diffs))
-    
+        
         # Enforce tolerance
         if diffs[idx] > tolerance:
             raise ValueError(
                 f"No measurement within {tolerance} of requested time {time} "
-                f"(nearest difference is {diffs[idx]})."
+                f"(nearest difference is {diffs[idx].astype('timedelta64[s]')})."
             )
-    
+        
         return self._return_single_measurement(idx)
     
     
