@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 
-from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
+from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 from MPSS_UQ.inversion import invert_psd
 from MPSS_UQ.inversion_results import highest_density_interval
 from MPSS_UQ.measurement_data import generate_DMPS_measurement
@@ -107,7 +107,7 @@ def compare_posterior_representations(ax1, ax2, ax3, ax4):
     DMPS_prop['charging_model'] = 'LYF-interp'
     DMPS_prop['max_charge'] = 10
     
-    DMPS = DifferentialMobilityParticleSizer(DMPS_prop, n_bins=50)
+    DMPS = MobilityParticleSizeSpectrometer(DMPS_prop, n_bins=70)
     
     pos_ion_mob = 1.35e-4
     neg_ion_mob = 1.60e-4

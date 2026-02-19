@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from MPSS_UQ.measurement_data import MeasurementDataset
-from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer, lpm_to_m3s
+from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer, lpm_to_m3s
 from MPSS_UQ.inversion import invert_dataset, smoothness_prior
 from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
                                    plot_timeseries)
@@ -59,7 +59,7 @@ dataset = MeasurementDataset(datetimes, d_m_data, counts, 'counts', temperatures
 DMPS_prop['charging_model'] = 'LYF-interp'
 DMPS_prop['max_charge'] = 10
 
-DMPS = DifferentialMobilityParticleSizer(DMPS_prop, n_bins=70)
+DMPS = MobilityParticleSizeSpectrometer(DMPS_prop, n_bins=70)
 
 # Optionally, set these here if you don't plan to update them during inversion
 DMPS.set_charger_properties(1.35e-4, 1.60e-4)

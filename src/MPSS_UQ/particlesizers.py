@@ -23,7 +23,7 @@ from MPSS_UQ.aerosol import (particle_diffusivity,
 lpm_to_m3s = 1e-3 / 60  # Liters per minute to m3 per second conversion factor
 
 
-class DifferentialMobilityParticleSizer:
+class MobilityParticleSizeSpectrometer:
     
     def __init__(self,
                  properties,             # A DMPS properties dictionary

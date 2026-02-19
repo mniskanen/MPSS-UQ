@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 
 from MPSS_UQ.inversion_results import InversionResult, InversionDataset
-from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
+from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 
 # Prevent the system from throttling down the CPU by giving any process that uses
 # inversion methods a higher priority
@@ -28,7 +28,7 @@ except AttributeError:
 
 
 def invert_psd(
-        sizer : DifferentialMobilityParticleSizer,  # Only DMPS implemented for now
+        sizer : MobilityParticleSizeSpectrometer,
         measurement,  # Measurement
         prior=None,   # If None, builds a default smoothness prior
         marginalize_ion_mobility=False,
@@ -114,7 +114,7 @@ def invert_psd(
 
 
 def invert_dataset(
-    sizer: DifferentialMobilityParticleSizer,
+    sizer: MobilityParticleSizeSpectrometer,
     dataset,  # MeasurementDataset or a sequence of measurement-like objects
     *,
     prior=None,
@@ -135,7 +135,7 @@ def invert_dataset(
 
     Parameters
     ----------
-    sizer : DifferentialMobilityParticleSizer
+    sizer : MobilityParticleSizeSpectrometer
         A configured sizer instance. The function will set operating conditions
         per measurement; with backend='loky' each worker gets its own copy.
     dataset : MeasurementDataset | Sequence
@@ -293,7 +293,7 @@ def smoothness_prior(d_m, mean, correlation_length, standard_deviation):
 
 
 def Laplace_approximation(
-        sizer : DifferentialMobilityParticleSizer,
+        sizer : MobilityParticleSizeSpectrometer,
         prior,
         measurement,
         N_start=None
@@ -374,7 +374,7 @@ def Laplace_approximation(
     return N_guess, np.linalg.cholesky(posterior_covariance)
 
 
-def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
+def Laplace_approximation_marginalize(sizer : MobilityParticleSizeSpectrometer,
                                       prior,
                                       measurement,
                                       marginalize_ion_mobility,
@@ -387,7 +387,7 @@ def Laplace_approximation_marginalize(sizer : DifferentialMobilityParticleSizer,
     and/or the ratio of positive to negative ions. Returns samples from the posterior mixture.
     
     Input:
-        sizer : an initialized instance of the DifferentialMobilityParticleSizer class
+        sizer : an initialized instance of the MobilityParticleSizeSpectrometer class
         prior : a dictionary with the prior specifications for the PSD
         measurement : a dictionary with data on the measurement
         marginalize_ion_mobility : True/False
@@ -722,7 +722,7 @@ def rw_metropolis_preconditioned(
 
 
 def run_mcmc(
-        sizer : DifferentialMobilityParticleSizer,
+        sizer : MobilityParticleSizeSpectrometer,
         prior,
         measurement,
         num_samples=10000,

@@ -5,7 +5,7 @@ import warnings
 
 from typing import Union, Sequence
 
-from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
+from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 
 
 class Measurement:
@@ -210,7 +210,7 @@ def generate_DMPS_measurement(DMPS_prop,
     DMPS_prop['max_charge'] = 10
 
     # Create the data generating DMPS object
-    DMPS = DifferentialMobilityParticleSizer(DMPS_prop, inversion_grid=d_m)
+    DMPS = MobilityParticleSizeSpectrometer(DMPS_prop, inversion_grid=d_m)
     
     # Set the ambient temperature and pressure
     from MPSS_UQ.aerosol import NORMAL_TEMPERATURE, NORMAL_PRESSURE

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 
-from MPSS_UQ.particlesizers import DifferentialMobilityParticleSizer
+from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 from MPSS_UQ.inversion import invert_psd, smoothness_prior
 from MPSS_UQ.measurement_data import generate_DMPS_measurement, compute_true_Ntot_in_range
 from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram, plot_datafit
@@ -87,10 +87,10 @@ log_standard_deviation = 1.5
 # Choose a charging model
 # DMPS_prop['charging_model'] = 'Wiedensohler'
 DMPS_prop['charging_model'] = 'LYF-interp'
-DMPS_prop['max_charge'] = 8
+DMPS_prop['max_charge'] = 10
 
-# Create the DMPS object used in the inversion
-DMPS_inv = DifferentialMobilityParticleSizer(DMPS_prop, n_bins=n_inversion_bins)
+# Create the MPSS object used in the inversion
+DMPS_inv = MobilityParticleSizeSpectrometer(DMPS_prop, n_bins=n_inversion_bins)
 
 DMPS_inv.set_operating_conditions(measurement.temperature, measurement.pressure)
 DMPS_inv.set_charger_properties(1.40e-4, 1.90e-4)
@@ -116,7 +116,7 @@ DMPS_properties_marg = DMPS_prop.copy()
 # for example the LYF-interp model
 DMPS_properties_marg['charging_model'] = 'LYF-interp'
 
-DMPS_marg = DifferentialMobilityParticleSizer(DMPS_properties_marg, n_bins=n_inversion_bins)
+DMPS_marg = MobilityParticleSizeSpectrometer(DMPS_properties_marg, n_bins=n_inversion_bins)
 
 DMPS_marg.set_operating_conditions(measurement.temperature,
                                    measurement.pressure
