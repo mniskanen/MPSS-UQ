@@ -50,19 +50,28 @@ def plot_posterior_summary(ax, result, CI_coverage=95, color='C0'):
 def plot_timeseries(ax, datetimes, d_m, Z,
                     cmap='viridis',
                     log_color_scale=True,
-                    vmin=None, vmax=None,  # manual limits
+                    vmin_q=None, vmax_q=None,
+                    vmin=None, vmax=None,
                     show_cbar=True,
                     cbar_label=None,
                     ):
     '''
-    Plot Z(time, size) as pcolormesh with gap masking and optional manual color limits.
+    Plot Z(time, size) as pcolormesh with gap masking and optional manual
+    or quantile-based color limits.
     
     Parameters
     ----------
     vmin, vmax : float or None
-        Manual color limits. If None, computed from data.
+        Manual color limits. Mutually exclusive with vmin_q / vmax_q.
+    vmin_q, vmax_q : float or None
+        Quantile-based limits in [0, 1]. Used if the corresponding
+        vmin / vmax is None. If both are None, default to 0.001 and 0.999.
     log_color_scale : bool
         If True (and norm is None), use LogNorm; else linear Normalize.
+    show_cbar : bool
+        Whether to draw a colorbar.
+    cbar_label : str or None
+        Label for the colorbar.
     '''
     
     # Compute time diffs in minutes
@@ -97,12 +106,21 @@ def plot_timeseries(ax, datetimes, d_m, Z,
     Z_masked = ma.array(Z, copy=True)
     Z_masked[:, gap_cols] = ma.masked
     
+    if vmin is not None and vmin_q is not None:
+        raise ValueError('Give only vmin or vmin_q.')
+    if vmax is not None and vmax_q is not None:
+        raise ValueError('Give only vmax or vmax_q.')
+    
     # Determine color scaling
     data_for_limits = Z_masked.compressed() if ma.isMaskedArray(Z_masked) else Z_masked.ravel()
     if vmin is None:
-        vmin = np.quantile(data_for_limits, 0.001)
+        if vmin_q is None:
+            vmin_q = 0.001
+        vmin = np.nanquantile(data_for_limits, vmin_q)
     if vmax is None:
-        vmax = np.max(data_for_limits)
+        if vmax_q is None:
+            vmax_q = 0.999
+        vmax = np.nanquantile(data_for_limits, vmax_q)
     
     if log_color_scale:
         _norm = colors.LogNorm(vmin=vmin, vmax=vmax)
