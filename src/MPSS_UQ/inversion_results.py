@@ -14,27 +14,43 @@ from tqdm import tqdm
 
 
 def highest_density_interval(samples, percentage):
-    """ Calculate the "percentage" highest probability density (HPD) region
-    from a set of samples. """
-    
-    # A corner case
+    """Calculate the highest density interval (HDI) for a given percentage.
+
+    Parameters
+    ----------
+    samples : ndarray, shape (n,) or (m, n)
+        1-D array of samples, or 2-D array where each row is an independent
+        set of samples.
+    percentage : float
+        Credible mass in [0, 1].
+
+    Returns
+    -------
+    hdi_low : ndarray, shape () or (m,)
+        Lower bound(s) of the HDI.
+    hdi_high : ndarray, shape () or (m,)
+        Upper bound(s) of the HDI.
+
+    For 1-D input, returns two scalars (as 0-d arrays).
+    For 2-D input, returns two arrays of length m.
+    """
     if np.isclose(percentage, 1.0):
-        return np.array([np.min(samples), np.max(samples)])
-    
-    samples_sorted = np.sort(np.copy(samples))
-    n_tot = samples.shape[0]
-    
-    # Number of samples needed for the required percentage
-    n_samples = int(np.floor(percentage * n_tot))
-    
-    # Width of all intervals with the right number of samples
-    widths = samples_sorted[n_samples:] - samples_sorted[:-n_samples]
-    min_width_idx = np.argmin(widths)
-    
-    hdi_start = samples_sorted[min_width_idx]
-    hdi_end = samples_sorted[min_width_idx + n_samples]
-    
-    return np.array([hdi_start, hdi_end])
+        if samples.ndim == 1:
+            return samples.min(), samples.max()
+        return samples.min(axis=1), samples.max(axis=1)
+
+    sorted_ = np.sort(samples, axis=-1)
+    n = sorted_.shape[-1]
+    n_samples = int(percentage * n)
+
+    widths = sorted_[..., n_samples:] - sorted_[..., :n - n_samples]
+    idx = np.argmin(widths, axis=-1)
+
+    if samples.ndim == 1:
+        return np.array([sorted_[idx], sorted_[idx + n_samples]])
+
+    rows = np.arange(sorted_.shape[0])
+    return sorted_[rows, idx], sorted_[rows, idx + n_samples]
 
 
 class InversionResult:
@@ -194,15 +210,11 @@ class InversionResult:
         """ Calculate the posterior median and highest density interval at credible level CI
         from the posterior samples of N.
         """
-        post_median = np.median(self.post_samples[:, self.sl], axis=0)
-        
-        CI_lower = np.zeros(self.d_m.shape[0])
-        CI_upper = np.zeros_like(CI_lower)
-        for j, i in enumerate(range(self.sl.start, self.sl.stop)):
-            CI_lower[j], CI_upper[j] = highest_density_interval(self.post_samples[:, i], CI / 100)
+        samples = self.post_samples[:, self.sl]  # (5000, d_m)
+        post_median = np.median(samples, axis=0)
+        hdi_low, hdi_high = highest_density_interval(samples.T, CI / 100.0)  # (d_m, 2)
+        return post_median, hdi_low, hdi_high
             
-        return post_median, CI_lower, CI_upper
-    
     
     def posterior_variance(self):
         """ Calculate (if needed) and return the posterior variance.
@@ -343,10 +355,9 @@ class InversionDataset:
             CI_upper[i] = up
     
         return posterior_medians, CI_lower, CI_upper
+
     
-    
-    def Ntot_summary(self, *, coverage=95, n_jobs=-1, backend="loky",
-                     n_samples=None, use_mean=False):
+    def Ntot_summary(self, coverage=95, n_samples=None, use_mean=False):
         """
         Compute per-measurement total particle count (Ntot) summaries across the dataset.
     
@@ -359,10 +370,6 @@ class InversionDataset:
         ----------
         coverage : float in (0, 100)
             Credible mass percentage for the interval (e.g. 95).
-        n_jobs : int
-            Parallel workers for joblib. -1 uses all cores.
-        backend : {"loky", "threading"}
-            "loky" uses processes (robust default). "threading" uses threads.
         n_samples : int or None
             Number of Ntot samples to draw per result.
             If None, uses the default behavior in InversionResult.Ntot_samples().
@@ -380,26 +387,17 @@ class InversionDataset:
         """
         if not (0 < coverage < 100):
             raise ValueError("coverage must be in (0, 100)")
-    
-        # local helper so joblib can pickle it cleanly
-        def _one(res):
-            samples = res.Ntot_samples(n_samples)
-            center = np.mean(samples) if use_mean else np.median(samples)
-            lo, hi = highest_density_interval(samples, coverage / 100.0)
-            return center, lo, hi
-    
-        iterator = tqdm(self.results, total=len(self.results),
-                        desc="Calculating Ntot summaries")
-    
-        outs = Parallel(n_jobs=n_jobs, backend=backend)(
-            delayed(_one)(res) for res in iterator
-        )
-    
-        Ntots = np.array([o[0] for o in outs])
-        Ntots_CI_low = np.array([o[1] for o in outs])
-        Ntots_CI_high = np.array([o[2] for o in outs])
-    
-        return Ntots, Ntots_CI_low, Ntots_CI_high
+        
+        # Draw Ntot samples for each result
+        all_Ntot = np.array([
+            res.Ntot_samples(n_samples)
+            for res in self.results
+        ])
+        
+        Ntots = np.mean(all_Ntot, axis=1) if use_mean else np.median(all_Ntot, axis=1)
+        hdi_low, hdi_high = highest_density_interval(all_Ntot, coverage / 100.0)
+        
+        return Ntots, hdi_low, hdi_high
     
     
     def set_reporting_range(self, reporting_range : str):
