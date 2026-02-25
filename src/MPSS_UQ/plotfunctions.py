@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
 
-from MPSS_UQ.inversion_results import highest_density_interval, InversionResult
+from MPSS_UQ.inversion_results import (highest_density_interval, InversionResult,
+                                       InversionResultSeries)
 
 
 def plot_psd(ax, d_m, N, *args, **kwargs):
@@ -48,8 +49,9 @@ def plot_posterior_summary(ax, result, CI_coverage=95, color='C0'):
 
 
 def plot_Ntot_timeseries(ax,
-                         inv_results : InversionDataset,
+                         inv_results : InversionResultSeries,
                          CI_coverage=95,
+                         color='C0',
                          ):
     '''
     Plot total particle count (Ntot) time series with credible intervals.
@@ -58,7 +60,7 @@ def plot_Ntot_timeseries(ax,
     ----------
     ax : matplotlib.axes.Axes
         Axes to plot on.
-    inv_results : InversionDataset
+    inv_results : InversionResultSeries
         Inversion results across multiple measurements.
     CI_coverage : float in (0, 100), optional
         Credible mass percentage for the HDI band. Default is 95.
@@ -70,11 +72,11 @@ def plot_Ntot_timeseries(ax,
                     CI_low,
                     CI_high,
                     alpha=0.3,
-                    facecolor='C0',
+                    facecolor=color,
                     label=f'{CI_coverage} % credible interval'
                     )
     
-    ax.plot(inv_results.datetimes, Ntots, 'C0', linewidth=0.5,
+    ax.plot(inv_results.datetimes, Ntots, color=color, linewidth=0.5,
             label=r'Median $N_\mathrm{tot}$')
     
     ax.set_xlim(inv_results.datetimes[0], inv_results.datetimes[-1] + np.timedelta64(6, "m"))

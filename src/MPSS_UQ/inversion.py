@@ -9,7 +9,7 @@ from joblib import Parallel, delayed
 
 from tqdm import tqdm
 
-from MPSS_UQ.inversion_results import InversionResult, InversionDataset
+from MPSS_UQ.inversion_results import InversionResult, InversionResultSeries
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 
 # Prevent the system from throttling down the CPU by giving any process that uses
@@ -128,10 +128,10 @@ def invert_dataset(
     n_jobs: int | None = None,
     sort_for_cache: bool = True,
     progress: bool = True,
-    ) -> InversionDataset:
+    ) -> InversionResultSeries:
     """
     Invert an entire dataset of MPSS measurements (optionally in parallel)
-    and return an InversionDataset with per-measurement results.
+    and return an InversionResultSeries with per-measurement results.
 
     Parameters
     ----------
@@ -160,7 +160,7 @@ def invert_dataset(
 
     Returns
     -------
-    InversionDataset
+    InversionResultSeries
         Holds results, datetimes, and supports downstream plotting/summary.
     """
     
@@ -168,9 +168,9 @@ def invert_dataset(
         prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
     # Build output container using input datetimes if available
     try:
-        inv_dataset = InversionDataset(dataset.datetimes)
+        inv_dataset = InversionResultSeries(dataset.datetimes)
     except AttributeError:
-        inv_dataset = InversionDataset(
+        inv_dataset = InversionResultSeries(
             [getattr(dataset[i], "datetime", None) for i in range(len(dataset))]
             )
 

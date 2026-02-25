@@ -73,7 +73,7 @@ DMPS.set_charger_properties(1.35e-4, 1.60e-4)
 # See below examples on how to select a subset of the data using datetimes
 # The example dataset covers the whole of December 2024
 
-inv_dataset = invert_dataset(DMPS,
+inv_results = invert_dataset(DMPS,
                              # dataset,
                              dataset.between_times("2024-12-09", "2024-12-12"),
                              # dataset.between_times("2024-12-01T00:00:00", "2024-12-03T12:00:00"),
@@ -83,9 +83,9 @@ inv_dataset = invert_dataset(DMPS,
 
 # You can also invert a larger dataset and then choose a subset to analyze using datetimes as
 # shown below. This reuses the results objects so it is memory-light.
-# example_day = inv_dataset.between_times('2024-12-10', '2024-12-11')
+# example_day = inv_results.between_times('2024-12-10', '2024-12-11')
 
-
+#%%
 
 # =============================================================================
 # Plot the results
@@ -94,8 +94,8 @@ inv_dataset = invert_dataset(DMPS,
 # How many percent of the posterior should the credible intervals cover
 CI_coverage = 95
 
-# inv_dataset.set_reporting_range('full')
-# inv_dataset.set_reporting_range('measured')  # This is set by default
+# inv_results.set_reporting_range('full')
+# inv_results.set_reporting_range('measured')  # This is set by default
 
 
 
@@ -103,14 +103,14 @@ CI_coverage = 95
 fig, axs = plt.subplots(nrows=3, ncols=1, num=1, clear=True)
 
 # Compute summary statistics
-medians, CI_lower, CI_upper = inv_dataset.posterior_summary(coverage=CI_coverage)
+medians, CI_lower, CI_upper = inv_results.posterior_summary(coverage=CI_coverage)
 
-d_m = inv_dataset.results[0].d_m  # d_m of the stored results
+d_m = inv_results[0].d_m  # d_m of the stored results
 binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
 
 # Subplot 1: Posterior medians
 Z = medians.T / binwidth
-plot_timeseries(axs[0], inv_dataset.datetimes, d_m, Z,
+plot_timeseries(axs[0], inv_results.datetimes, d_m, Z,
                 cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
                 )
 axs[0].set_title(r'Posterior median of $\mathbf{N}$')
@@ -120,7 +120,7 @@ axs[0].set_title(r'Posterior median of $\mathbf{N}$')
 eps = 0.0001
 W = ((CI_upper - CI_lower) / (medians + eps)).T
 
-plot_timeseries(axs[1], inv_dataset.datetimes, d_m, W,
+plot_timeseries(axs[1], inv_results.datetimes, d_m, W,
                 # log_color_scale=False,
                 cbar_label=fr'Relative {CI_coverage} % HDI width',
                 cmap='inferno',
@@ -144,7 +144,7 @@ rgba = cmap_psd(norm_psd(Z))
 rgba[..., -1] = alpha
 
 # Draw empty mesh, then set RGBA facecolors
-im2 = plot_timeseries(axs[2], inv_dataset.datetimes, d_m, Z,
+im2 = plot_timeseries(axs[2], inv_results.datetimes, d_m, Z,
                       cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
                       )
 im2.set_cmap(None)
@@ -168,10 +168,10 @@ fig, axs = plt.subplots(nrows=2, ncols=1, num=2, clear=True)
 
 prior = smoothness_prior(d_m, 0, 8/16, 1.5)
 prior_variance = np.diag(prior['covariance'])
-post_variance = inv_dataset.posterior_variance()
+post_variance = inv_results.posterior_variance()
 VR = np.log10(post_variance / prior_variance).T
 
-plot_timeseries(axs[0], inv_dataset.datetimes, d_m, VR,
+plot_timeseries(axs[0], inv_results.datetimes, d_m, VR,
                 log_color_scale=False,
                 cbar_label=r'$\log_{10}(\sigma_\mathrm{post}^2 / \sigma_\mathrm{prior}^2)$',
                 cmap='Blues_r'
@@ -182,7 +182,7 @@ axs[0].set_title('log variance reduction')
 CI_width = CI_upper - CI_lower
 plotval = CI_width.T / binwidth
 vmin = np.quantile(plotval.flatten(), 0.001)
-plot_timeseries(axs[1], inv_dataset.datetimes, d_m, plotval,
+plot_timeseries(axs[1], inv_results.datetimes, d_m, plotval,
                 # log_color_scale=False,
                 cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
                 cmap='Blues_r'
@@ -207,13 +207,13 @@ axs = [
     ]
 
 # Choose two measurements at random
-idx_1, idx_2 = np.random.choice(len(inv_dataset.datetimes), 2)
+idx_1, idx_2 = np.random.choice(len(inv_results.datetimes), 2)
 
 # Convert numpy datetimes to Python datetimes for easier formatting
-datetime_1 = inv_dataset.datetimes[idx_1].astype('datetime64[s]').item()
-datetime_2 = inv_dataset.datetimes[idx_2].astype('datetime64[s]').item()
+datetime_1 = inv_results.datetimes[idx_1].astype('datetime64[s]').item()
+datetime_2 = inv_results.datetimes[idx_2].astype('datetime64[s]').item()
 
-plot_posterior_summary(axs[0], inv_dataset.results[idx_1], CI_coverage)
+plot_posterior_summary(axs[0], inv_results[idx_1], CI_coverage)
 axs[0].set_yscale('linear')
 axs[0].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
 axs[0].grid('on')
@@ -222,7 +222,7 @@ axs[0].set_title(
     loc='center'
     )
 
-plot_posterior_summary(axs[2], inv_dataset.results[idx_2], CI_coverage)
+plot_posterior_summary(axs[2], inv_results[idx_2], CI_coverage)
 axs[2].set_yscale('linear')
 axs[2].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
 axs[2].grid('on')
@@ -231,8 +231,8 @@ axs[2].set_title(
     loc='center'
     )
 
-Ntot_samples_1 = inv_dataset.results[idx_1].Ntot_samples()
-Ntot_samples_2 = inv_dataset.results[idx_2].Ntot_samples()
+Ntot_samples_1 = inv_results[idx_1].Ntot_samples()
+Ntot_samples_2 = inv_results[idx_2].Ntot_samples()
 plot_Ntot_histogram(axs[1], Ntot_samples_1)
 plot_Ntot_histogram(axs[3], Ntot_samples_2)
 
@@ -246,9 +246,9 @@ plt.show()
 
 # Figure 4: Total particle numbers --------------------------------------------
 fig, ax = plt.subplots(nrows=1, ncols=1, num=4, clear=True)
-plot_Ntot_timeseries(ax, inv_dataset)
-dm0 = 10**(np.log10(inv_dataset.results[0].d_m[0]) - 0.5 * binwidth) * 1e9
-dm1 = 10**(np.log10(inv_dataset.results[0].d_m[-1]) + 0.5 * binwidth) * 1e9
+plot_Ntot_timeseries(ax, inv_results)
+dm0 = 10**(np.log10(inv_results[0].d_m[0]) - 0.5 * binwidth) * 1e9
+dm1 = 10**(np.log10(inv_results[0].d_m[-1]) + 0.5 * binwidth) * 1e9
 ax.set_title(f'Total particle numbers between [{dm0 : .1f}, {dm1 : .1f}] nm', loc='left')
 
 
@@ -257,7 +257,7 @@ ax.set_title(f'Total particle numbers between [{dm0 : .1f}, {dm1 : .1f}] nm', lo
 fig, ax = plt.subplots(1, 1, num=5, clear=True)
 
 # Take the measurement matching the inverted one
-meas = dataset.at_time(inv_dataset.datetimes[idx_1])
+meas = dataset.at_time(inv_results.datetimes[idx_1])
 
 DMPS.set_operating_conditions(meas.temperature, meas.pressure)
-plot_datafit(ax, DMPS, meas.output, inv_dataset.results[idx_1])
+plot_datafit(ax, DMPS, meas.output, inv_results[idx_1])

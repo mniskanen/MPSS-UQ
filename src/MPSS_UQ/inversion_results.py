@@ -292,30 +292,30 @@ class InversionResult:
                              "result.samples")
 
 
-class InversionDataset:
+class InversionResultSeries:
     """
     Container for inversion results across multiple measurements.
     """
 
     def __init__(self, datetimes):
         self.datetimes = datetimes
-        self.results = [None] * len(datetimes)
+        self._results = [None] * len(datetimes)
     
     
     def assign_result(self, idx, result: InversionResult):
-        self.results[idx] = result
+        self._results[idx] = result
     
     
     def posterior_variance(self):
         """
         Returns an array of posterior variances for all results.
         """
-        num_results = len(self.results)
-        num_d_m = self.results[0].d_m.shape[0]
+        num_results = len(self._results)
+        num_d_m = self._results[0].d_m.shape[0]
         posterior_variances = np.zeros((num_results, num_d_m))
         
         for i in range(num_results):
-            posterior_variances[i] = self.results[i].posterior_variance()
+            posterior_variances[i] = self._results[i].posterior_variance()
         
         return posterior_variances
     
@@ -329,15 +329,15 @@ class InversionDataset:
         n_jobs : int
             Number of worker processes. -1 uses all cores.
         """
-        num_results = len(self.results)
-        num_d_m = self.results[0].d_m.shape[0]
+        num_results = len(self._results)
+        num_d_m = self._results[0].d_m.shape[0]
     
         posterior_medians = np.zeros((num_results, num_d_m))
         CI_lower = np.zeros_like(posterior_medians)
         CI_upper = np.zeros_like(posterior_medians)
     
         def _process(i):
-            med, lo, up = self.results[i].posterior_summary(*args, **kwargs)
+            med, lo, up = self._results[i].posterior_summary(*args, **kwargs)
             posterior_medians[i] = med
             CI_lower[i] = lo
             CI_upper[i] = up
@@ -384,7 +384,7 @@ class InversionDataset:
         # Draw Ntot samples for each result
         all_Ntot = np.array([
             res.Ntot_samples(n_samples)
-            for res in self.results
+            for res in self._results
         ])
         
         Ntots = np.mean(all_Ntot, axis=1) if use_mean else np.median(all_Ntot, axis=1)
@@ -394,33 +394,32 @@ class InversionDataset:
     
     
     def set_reporting_range(self, reporting_range : str):
-        for i in range(len(self.results)):
-            self.results[i].set_reporting_range(reporting_range)
+        for i in range(len(self._results)):
+            self._results[i].set_reporting_range(reporting_range)
     
     
     def _return_subset(self, indices):
             """
-            Build a new InversionDataset with a subset of rows (as a view when possible).
+            Build a new InversionResultSeries with a subset of rows (as a view when possible).
             `indices` can be a slice, a list/ndarray of ints, or a boolean mask.
             """
             new_datetimes = self.datetimes[indices]
             
-            # Reuse the same InversionResult objects (no deep copy).
-            # If you prefer isolation, you could clone here, but it's usually unnecessary.
+            # Reuse the same InversionResult objects
             if isinstance(indices, (slice, list, np.ndarray)):
-                new_results = (np.array(self.results, dtype=object)[indices]).tolist()
+                new_results = (np.array(self._results, dtype=object)[indices]).tolist()
             else:
                 # Fallback for other index types
-                new_results = [self.results[indices]]
+                new_results = [self._results[indices]]
             
-            new_ds = InversionDataset(new_datetimes)
-            new_ds.results = new_results
-            return new_ds
+            new_series = InversionResultSeries(new_datetimes)
+            new_series._results = new_results
+            return new_series
     
     
     def between_times(self, start, end, closed="both"):
         """
-        Return a new InversionDataset restricted to [start, end] using the chosen
+        Return a new InversionResultSeries restricted to [start, end] using the chosen
         boundary convention.
         
         Parameters
@@ -450,14 +449,18 @@ class InversionDataset:
     def __getitem__(self, idx):
         """
         - int -> InversionResult
-        - slice / list / ndarray / boolean mask -> InversionDataset
+        - slice / list / ndarray / boolean mask -> InversionResultSeries
         """
         if isinstance(idx, (int, np.integer)):
             # Support negative indices (Python/NumPy semantics)
             if idx < 0:
-                idx += len(self.results)
-            if idx < 0 or idx >= len(self.results):
+                idx += len(self._results)
+            if idx < 0 or idx >= len(self._results):
                 raise IndexError("Index out of range.")
-            return self.results[idx]
+            return self._results[idx]
         # For multi-select, return a sliced dataset
         return self._return_subset(idx)
+    
+    
+    def __len__(self):
+        return len(self._results)
