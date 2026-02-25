@@ -4,7 +4,7 @@ from MPSS_UQ.measurement_data import MeasurementDataset
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer, lpm_to_m3s
 from MPSS_UQ.inversion import invert_dataset, smoothness_prior
 from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
-                                   plot_timeseries)
+                                   plot_timeseries, plot_Ntot_timeseries)
 
 import yaml
 import numpy as np
@@ -246,24 +246,10 @@ plt.show()
 
 # Figure 4: Total particle numbers --------------------------------------------
 fig, ax = plt.subplots(nrows=1, ncols=1, num=4, clear=True)
-
-Ntots, Ntots_CI_low, Ntots_CI_high = inv_dataset.Ntot_summary(coverage=95)
-
-ax.fill_between(inv_dataset.datetimes,
-                Ntots_CI_low,
-                Ntots_CI_high,
-                alpha=0.25,
-                facecolor='C0',
-                label=f'{CI_coverage} % credible interval'
-                )
-ax.plot(inv_dataset.datetimes, Ntots, label=r'Median $N_\mathrm{tot}$')
-ax.set_xlabel('Time')
-ax.set_ylabel('Ntot')
+plot_Ntot_timeseries(ax, inv_dataset)
 dm0 = 10**(np.log10(inv_dataset.results[0].d_m[0]) - 0.5 * binwidth) * 1e9
 dm1 = 10**(np.log10(inv_dataset.results[0].d_m[-1]) + 0.5 * binwidth) * 1e9
-ax.set_title(f'Total particle numbers between [{dm0 : .1f}, {dm1 : .1f}] nm')
-ax.grid('on')
-ax.legend()
+ax.set_title(f'Total particle numbers between [{dm0 : .1f}, {dm1 : .1f}] nm', loc='left')
 
 
 

@@ -47,6 +47,46 @@ def plot_posterior_summary(ax, result, CI_coverage=95, color='C0'):
     ax.legend()
 
 
+def plot_Ntot_timeseries(ax,
+                         inv_results : InversionDataset,
+                         CI_coverage=95,
+                         ):
+    '''
+    Plot total particle count (Ntot) time series with credible intervals.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on.
+    inv_results : InversionDataset
+        Inversion results across multiple measurements.
+    CI_coverage : float in (0, 100), optional
+        Credible mass percentage for the HDI band. Default is 95.
+    '''
+    
+    Ntots, CI_low, CI_high = inv_results.Ntot_summary(coverage=CI_coverage)
+    
+    ax.fill_between(inv_results.datetimes,
+                    CI_low,
+                    CI_high,
+                    alpha=0.3,
+                    facecolor='C0',
+                    label=f'{CI_coverage} % credible interval'
+                    )
+    
+    ax.plot(inv_results.datetimes, Ntots, 'C0', linewidth=0.5,
+            label=r'Median $N_\mathrm{tot}$')
+    
+    ax.set_xlim(inv_results.datetimes[0], inv_results.datetimes[-1] + np.timedelta64(6, "m"))
+    ax.set_ylim([0, np.quantile(CI_high, 1)])
+    ax.set_ylabel(r'$N_\mathrm{tot}$')
+    ax.set_xlabel('Time')
+    ax.grid('on')
+    ax.legend()
+    
+    ax.set_title('Total particle numbers', loc='left')
+
+
 def plot_timeseries(ax, datetimes, d_m, Z,
                     cmap='viridis',
                     log_color_scale=True,
