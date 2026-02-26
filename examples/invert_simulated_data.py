@@ -8,6 +8,7 @@ from matplotlib.lines import Line2D
 
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 from MPSS_UQ.inversion import invert_psd, smoothness_prior
+from MPSS_UQ.inversion_results import total_concentration, highest_density_interval, summarize_samples
 from MPSS_UQ.measurement_data import generate_DMPS_measurement, compute_true_Ntot_in_range
 from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram, plot_datafit
 
@@ -145,7 +146,7 @@ result_marg = invert_psd(DMPS_marg,
 CI_coverage = 95
 
 # To return the estimate mean value and lower and upper limits of the credible intervals, do:
-# mean, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
+# mean, CI_lower, CI_upper = psd_posterior.summary(coverage=CI_coverage)
 
 # fig, axs = plt.subplots(2, 2, num=1, clear=True)
 fig = plt.figure(num=1, clear=True)
@@ -160,19 +161,19 @@ axs = [
 
 fig.suptitle('True and estimated PSDs')
 
-plot_posterior_summary(axs[0], result, CI_coverage)
+plot_posterior_summary(axs[0], psd_posterior, CI_coverage)
 plot_psd(axs[0], measurement.d_m_true, measurement.N_true, color='k', label='Truth')
 axs[0].set_yscale('linear')
-axs[0].set_xlim([result.d_m[0] * 1e9, result.d_m[-1] * 1e9])
+axs[0].set_xlim([psd_posterior.d_m[0] * 1e9, psd_posterior.d_m[-1] * 1e9])
 axs[0].grid('on')
 axs[0].legend()
 axs[0].set_title('a) PSD estimate, charging uncertainty not considered', loc='left')
 
 
-plot_posterior_summary(axs[2], result_marg, CI_coverage)
+plot_posterior_summary(axs[2], psd_posterior_marg, CI_coverage)
 plot_psd(axs[2], measurement.d_m_true, measurement.N_true, color='k', label='Truth')
 axs[2].set_yscale('linear')
-axs[2].set_xlim([result_marg.d_m[0] * 1e9, result_marg.d_m[-1] * 1e9])
+axs[2].set_xlim([psd_posterior_marg.d_m[0] * 1e9, psd_posterior_marg.d_m[-1] * 1e9])
 axs[2].grid('on')
 axs[2].legend()
 axs[2].set_title('b) PSD estimate, marginalized charging uncertainty', loc='left')
@@ -185,17 +186,16 @@ y_max = np.max((y0_max, y1_max))
 axs[0].set_ylim([y_min, y_max])
 axs[2].set_ylim([y_min, y_max])
 
-Ntot_true = compute_true_Ntot_in_range(measurement, result.d_m)
-Ntot_samples = result.Ntot_samples()
-Ntot_samples_marg = result_marg.Ntot_samples()
-from MPSS_UQ.inversion_results import highest_density_interval
-[plt_lo, plt_hi] = highest_density_interval(Ntot_samples, 0.998)
-[plt_lo_marg, plt_hi_marg] = highest_density_interval(Ntot_samples_marg, 0.998)
+Ntot_true = compute_true_Ntot_in_range(measurement, psd_posterior.d_m)
+Ntot_samples = psd_posterior.propagate_to(total_concentration)
+Ntot_samples_marg = psd_posterior_marg.propagate_to(total_concentration)
+
+_, plt_lo, plt_hi = summarize_samples(Ntot_samples, coverage=99.8)
+_, plt_lo_marg, plt_hi_marg = summarize_samples(Ntot_samples_marg, coverage=99.8)
 xlimits = (min(plt_lo, plt_lo_marg),
            max(plt_hi, plt_hi_marg))
 plot_Ntot_histogram(axs[1], Ntot_samples, Ntot_true=Ntot_true, xlimits=xlimits)
 plot_Ntot_histogram(axs[3], Ntot_samples_marg, Ntot_true=Ntot_true, xlimits=xlimits)
-
 
 line = Line2D([0.075, 0.95], [0.49, 0.49], transform=fig.transFigure,
               color='black', linewidth=4)
@@ -206,8 +206,8 @@ plt.show()
 
 # Plot data fit
 fig, axs = plt.subplots(2, 1, num=999, clear=True)
-plot_datafit(axs[0], DMPS_inv, measurement.output, result)
-plot_datafit(axs[1], DMPS_marg, measurement.output, result_marg)
+plot_datafit(axs[0], DMPS_inv, measurement.output, psd_posterior)
+plot_datafit(axs[1], DMPS_marg, measurement.output, psd_posterior_marg)
 axs[0].set_title('Data fit, no marginalization')
 axs[1].set_title('Data fit, marginalized')
 fig.tight_layout()

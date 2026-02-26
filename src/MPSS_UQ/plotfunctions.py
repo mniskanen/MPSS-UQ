@@ -7,7 +7,8 @@ import matplotlib.colors as colors
 import matplotlib.ticker as tck
 
 from MPSS_UQ.inversion_results import (highest_density_interval, InversionResult,
-                                       InversionResultSeries)
+                                       InversionResultSeries, total_concentration,
+                                       summarize_samples)
 
 
 def plot_psd(ax, d_m, N, *args, **kwargs):
@@ -24,18 +25,18 @@ def plot_psd(ax, d_m, N, *args, **kwargs):
     ax.legend()
 
 
-def plot_posterior_summary(ax, result, CI_coverage=95, color='C0'):
+def plot_posterior_summary(ax, psd_posterior, CI_coverage=95, color='C0'):
     ''' Plot a simple posterior summary (mean value and credible intervals).
     Input:
-        result - instance of an InversionResult
+        psd_posterior - instance of an InversionResult
         CI_coverage - percentage of posterior the credible intervals should cover
     '''
     
-    N_median, CI_lower, CI_upper = result.posterior_summary(coverage=CI_coverage)
+    N_median, CI_lower, CI_upper = psd_posterior.summary(coverage=CI_coverage)
     
-    ax.fill_between(result.d_m * 1e9,
-                    CI_upper / result.binwidth,
-                    CI_lower / result.binwidth,
+    ax.fill_between(psd_posterior.d_m * 1e9,
+                    CI_upper / psd_posterior.binwidth,
+                    CI_lower / psd_posterior.binwidth,
                     alpha=0.25,
                     facecolor=color,
                     label=f'{CI_coverage} % credible interval'
@@ -43,13 +44,13 @@ def plot_posterior_summary(ax, result, CI_coverage=95, color='C0'):
     
     label = 'Posterior median'
     
-    plot_psd(ax, result.d_m, N=N_median, linestyle='-', color=color, label=label)
+    plot_psd(ax, psd_posterior.d_m, N=N_median, linestyle='-', color=color, label=label)
     
     ax.legend()
 
 
 def plot_Ntot_timeseries(ax,
-                         inv_results : InversionResultSeries,
+                         psd_posteriors : InversionResultSeries,
                          CI_coverage=95,
                          color='C0',
                          ):
@@ -60,26 +61,27 @@ def plot_Ntot_timeseries(ax,
     ----------
     ax : matplotlib.axes.Axes
         Axes to plot on.
-    inv_results : InversionResultSeries
+    psd_posteriors : InversionResultSeries
         Inversion results across multiple measurements.
     CI_coverage : float in (0, 100), optional
         Credible mass percentage for the HDI band. Default is 95.
     '''
     
-    Ntots, CI_low, CI_high = inv_results.Ntot_summary(coverage=CI_coverage)
+    Ntot_samples = psd_posteriors.propagate_to(total_concentration)
+    Ntots, CI_low, CI_high = summarize_samples(Ntot_samples, coverage=CI_coverage)
     
-    ax.fill_between(inv_results.datetimes,
+    ax.fill_between(psd_posteriors.datetimes,
                     CI_low,
                     CI_high,
-                    alpha=0.3,
+                    alpha=0.5,
                     facecolor=color,
                     label=f'{CI_coverage} % credible interval'
                     )
     
-    ax.plot(inv_results.datetimes, Ntots, color=color, linewidth=0.5,
+    ax.plot(psd_posteriors.datetimes, Ntots, color=color, linewidth=0.5,
             label=r'Median $N_\mathrm{tot}$')
     
-    ax.set_xlim(inv_results.datetimes[0], inv_results.datetimes[-1] + np.timedelta64(6, "m"))
+    ax.set_xlim(psd_posteriors.datetimes[0], psd_posteriors.datetimes[-1] + np.timedelta64(6, "m"))
     ax.set_ylim([0, np.quantile(CI_high, 1)])
     ax.set_ylabel(r'$N_\mathrm{tot}$')
     ax.set_xlabel('Time')
@@ -270,7 +272,7 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
     elif result.input_mode == 'gaussian-log10':
         for i in range(n_samples):
             output_predicted_samples[i] = DMPS.forward_model(
-                np.log10(result.draw_posterior_samples(num=1).squeeze())
+                np.log10(result.get_posterior_samples(num=1).squeeze())
                 )
     else:
         raise ValueError('Unknown result input mode.')
@@ -310,6 +312,7 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
 
 def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None, color='C0'):
     ''' Plot a histogram and some credible intervals of the sampled Ntot. '''
+    Ntots = Ntots.squeeze()
     
     Ntot_low95, Ntot_high95 = highest_density_interval(Ntots, 0.95)
     

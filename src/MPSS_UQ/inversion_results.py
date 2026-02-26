@@ -13,6 +13,10 @@ from tqdm import tqdm
 
 
 
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
 def highest_density_interval(samples, percentage):
     """Calculate the highest density interval (HDI) for a given percentage.
 
@@ -51,6 +55,111 @@ def highest_density_interval(samples, percentage):
 
     rows = np.arange(sorted_.shape[0])
     return sorted_[rows, idx], sorted_[rows, idx + n_samples]
+
+
+
+# ---------------------------------------------------------------------------
+# Derived quantities
+# ---------------------------------------------------------------------------
+
+def relative_hdi_width(median, ci_lower, ci_upper, eps=1e-4):
+    """
+    Relative width of the highest density interval.
+
+    Defined as (ci_upper - ci_lower) / (median + eps).  The small constant
+    *eps* prevents division by zero in size bins where the posterior median
+    is near zero.
+
+    Parameters
+    ----------
+    median : ndarray
+        Posterior median, shape (n_bins,) or (n_measurements, n_bins).
+    ci_lower : ndarray
+        Lower bound of the HDI, same shape as *median*.
+    ci_upper : ndarray
+        Upper bound of the HDI, same shape as *median*.
+    eps : float, optional
+        Regularisation constant (default 1e-4).
+
+    Returns
+    -------
+    rel_width : ndarray
+        Same shape as the inputs.
+    """
+    return (ci_upper - ci_lower) / (median + eps)
+
+
+def total_concentration(psd):
+    """
+    Total particle number concentration, summed over all size bins.
+
+    Parameters
+    ----------
+    psd : ndarray, shape (n_bins,) or (n_samples, n_bins)
+        Particle size distribution as number concentrations per bin.
+        A single PSD vector or a batch of samples (e.g., as returned
+        by :meth:`InversionResult.get_posterior_samples`).
+
+    Returns
+    -------
+    Ntot : scalar or ndarray, shape (n_samples,)
+        Total concentration.  Scalar when the input is 1-D, array
+        when the input is 2-D.
+    """
+    return np.sum(psd, axis=-1)
+
+
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+def summarize_samples(samples, coverage=95, use_mean=False):
+    """
+    Summarize posterior samples of a derived quantity.
+
+    The sample axis is always axis 1.  For a single measurement,
+    the input shape should be (1, n_samples) or (1, n_samples, k).
+    Leading dimensions of size 1 are squeezed from the output.
+
+    Parameters
+    ----------
+    samples : ndarray
+        Shape (n_meas, n_samples) or (n_meas, n_samples, k).
+    coverage : float
+        Credible mass in percent, in (0, 100).
+    use_mean : bool
+        If True, report the mean; otherwise the median.
+
+    Returns
+    -------
+    center : ndarray
+    ci_lower : ndarray
+    ci_upper : ndarray
+    """
+    if not (0 < coverage < 100):
+        raise ValueError("coverage must be in (0, 100)")
+
+    if use_mean:
+        center = np.mean(samples, axis=1)
+    else:
+        center = np.median(samples, axis=1)
+
+    work = np.moveaxis(samples, 1, -1)
+    shape = work.shape[:-1]
+    flat = work.reshape(-1, work.shape[-1])
+
+    ci_lower, ci_upper = highest_density_interval(flat, coverage / 100.0)
+    ci_lower = ci_lower.reshape(shape)
+    ci_upper = ci_upper.reshape(shape)
+
+    # Squeeze leading dimension if single measurement
+    if center.shape[0] == 1:
+        center = center.squeeze(axis=0)
+        ci_lower = ci_lower.squeeze(axis=0)
+        ci_upper = ci_upper.squeeze(axis=0)
+
+    return center, ci_lower, ci_upper
 
 
 class InversionResult:
@@ -210,14 +319,14 @@ class InversionResult:
         """ Calculate the posterior median and highest density interval at credible level CI
         from the posterior samples of N.
         """
-        samples = self.post_samples[:, self.sl]  # (5000, d_m)
+        samples = self.post_samples[:, self.sl]
         post_median = np.median(samples, axis=0)
-        hdi_low, hdi_high = highest_density_interval(samples.T, CI / 100.0)  # (d_m, 2)
+        hdi_low, hdi_high = highest_density_interval(samples.T, CI / 100.0)
         return post_median, hdi_low, hdi_high
             
     
     def posterior_variance(self):
-        """ Calculate (if needed) and return the posterior variance.
+        """ Return the posterior variance.
         """
         if self.input_mode == 'gaussian-log10':
             return np.diag(self.post_covL_log10[self.sl, self.sl])**2
@@ -225,7 +334,7 @@ class InversionResult:
             return np.var(np.log10(self.post_samples[:, self.sl]), axis=0)
     
     
-    def posterior_summary(self, coverage=95):
+    def summary(self, coverage=95):
         """
         Returns the posterior median and shortest credible intervals.
         Input:
@@ -240,56 +349,78 @@ class InversionResult:
             return self._postprocess_results_from_samples(coverage)
     
     
-    def Ntot_samples(self, n_samples=None):
+    def propagate_to(self, func, *args, num=None, **kwargs):
         """
-        Returns samples of total posterior particle count.
-        Input:
-            n_samples: number of Ntot samples to return
+        Propagate posterior uncertainty through a function. This is done by drawing samples from
+        the posterior of the PSD, and putting those samples through *func*.
+    
+        The PSD samples are passed as the first argument to *func*.
+        Any additional arguments are forwarded.
+    
+        Parameters
+        ----------
+        func : callable
+            A function whose first argument is the PSD, shape
+            (n_samples, n_bins).  Additional parameters (e.g.,
+            diameter vector, physical constants) are passed via
+            *args* and **kwargs.
+        *args
+            Extra positional arguments forwarded to *func*.
+        num : int or None
+            Number of posterior samples to use.
+        **kwargs
+            Extra keyword arguments forwarded to *func*.
+    
+        Returns
+        -------
+        result : ndarray, shape (1, n_samples, ...)
         """
-        
+        samples = self.get_posterior_samples(num=num)
+        return func(samples, *args, **kwargs)[np.newaxis, ...]
+
+    
+    
+    def get_posterior_samples(self, num=None):
+        """
+        Return posterior samples in linear (N) space, shape (num, n_bins).
+    
+        For input_mode='samples', returns stored samples (or a random
+        subset if *num* < available samples).
+        For input_mode='gaussian-log10', draws *num* samples from the
+        Gaussian approximation.
+    
+        Parameters
+        ----------
+        num : int or None
+            Number of samples.  For 'samples' mode, None returns all
+            stored samples.  For 'gaussian-log10' mode, None defaults
+            to 5000.
+    
+        Returns
+        -------
+        samples : ndarray, shape (num, n_bins)
+            Posterior samples over the current reporting range.
+        """
         if self.input_mode == 'samples':
-            if n_samples is None:
-                return np.sum(self.post_samples[:, self.sl], axis=1)
-            
-            elif n_samples <= len(self.post_samples):
-                sample_idxs = self.rng.choice(len(self.post_samples), n_samples, replace=False)
-                return np.sum(self.post_samples[sample_idxs, self.sl], axis=1)
-            
+            samples = self.post_samples[:, self.sl]
+            if num is None or num == len(samples):
+                return samples
+            elif num < len(samples):
+                idx = self.rng.choice(len(samples), num, replace=False)
+                return samples[idx]
             else:
                 raise ValueError(
-                    f'Cannot request n={n_samples} Ntot samples because InversionResult has ' + 
-                    f'only n={len(self.post_samples)} posterior samples.'
+                    f'Requested {num} samples but only {len(samples)} available.'
                     )
         
         elif self.input_mode == 'gaussian-log10':
-            if n_samples is None:
-                n_samples = 5000
-            
-            # We have to sample because of the nonlinear transformation
-            post_samples_log10 = self.post_mean_log10[self.sl, None] \
-                + self.post_covL_log10[self.sl, self.sl] @ self.rng.normal(
-                loc=0.0, scale=1.0, size=(self.d_m.shape[0], n_samples)
-                )
-            # Do 10^samples, but using np.exp (faster)
-            post_samples = np.exp(post_samples_log10 * np.log(10))
-            Ntot_samples = np.sum(post_samples, axis=0)
-            return Ntot_samples
-    
-    
-    def draw_posterior_samples(self, num=1):
-        ''' Draw posterior samples from the Gaussian approximation.
-        Can only be used for the input mode 'gaussian-log10'.
-        '''
-        
-        if self.input_mode == 'gaussian-log10':
+            if num is None:
+                num = 5000
+             # Do 10^samples, but using np.exp (faster)
             return np.exp((self.post_mean_log10[self.sl, None]
                         + self.post_covL_log10[self.sl, self.sl]
                         @ self.rng.normal(loc=0.0, scale=1.0, size=(len(self.d_m), num))
                         ) * np.log(10)).T
-        
-        else:
-            raise ValueError("Posterior samples for input_mode=='samples' are found in " +
-                             "result.samples")
 
 
 class InversionResultSeries:
@@ -320,7 +451,7 @@ class InversionResultSeries:
         return posterior_variances
     
     
-    def posterior_summary(self, *args, n_jobs=-1, **kwargs):
+    def summary(self, *args, n_jobs=-1, **kwargs):
         """
         Returns arrays of posterior median, lower CI, upper CI for all results.
         
@@ -337,7 +468,7 @@ class InversionResultSeries:
         CI_upper = np.zeros_like(posterior_medians)
     
         def _process(i):
-            med, lo, up = self._results[i].posterior_summary(*args, **kwargs)
+            med, lo, up = self._results[i].summary(*args, **kwargs)
             posterior_medians[i] = med
             CI_lower[i] = lo
             CI_upper[i] = up
@@ -348,49 +479,33 @@ class InversionResultSeries:
         )
 
         return posterior_medians, CI_lower, CI_upper
-
     
-    def Ntot_summary(self, coverage=95, n_samples=None, use_mean=False):
+    
+    def propagate_to(self, func, *args, num=None, **kwargs):
         """
-        Compute per-measurement total particle count (Ntot) summaries across the dataset.
-    
-        For each InversionResult:
-          1) draw Ntot samples via result.Ntot_samples(n_samples)
-          2) report the center (median by default, or mean if use_mean=True)
-          3) compute the highest-density interval (HDI) at the given coverage
+        Propagate posterior uncertainty through a function for each
+        measurement.
     
         Parameters
         ----------
-        coverage : float in (0, 100)
-            Credible mass percentage for the interval (e.g. 95).
-        n_samples : int or None
-            Number of Ntot samples to draw per result.
-            If None, uses the default behavior in InversionResult.Ntot_samples().
-        use_mean : bool
-            If True, report the mean instead of the median as the point estimate.
+        func : callable
+            A function whose first argument is the PSD.
+        *args
+            Extra positional arguments forwarded to *func*.
+        num : int or None
+            Number of posterior samples per measurement.
+        **kwargs
+            Extra keyword arguments forwarded to *func*.
     
         Returns
         -------
-        Ntots : (N,) ndarray
-            Point estimates (median by default) of Ntot for each measurement.
-        Ntots_CI_low : (N,) ndarray
-            Lower HDI bound for each measurement.
-        Ntots_CI_high : (N,) ndarray
-            Upper HDI bound for each measurement.
+        result : ndarray, shape (n_measurements, n_samples, ...)
         """
-        if not (0 < coverage < 100):
-            raise ValueError("coverage must be in (0, 100)")
-        
-        # Draw Ntot samples for each result
-        all_Ntot = np.array([
-            res.Ntot_samples(n_samples)
+        return np.array([
+            res.propagate_to(func, *args, num=num, **kwargs).squeeze(axis=0)
             for res in self._results
-        ])
-        
-        Ntots = np.mean(all_Ntot, axis=1) if use_mean else np.median(all_Ntot, axis=1)
-        hdi_low, hdi_high = highest_density_interval(all_Ntot, coverage / 100.0)
-        
-        return Ntots, hdi_low, hdi_high
+            ])
+
     
     
     def set_reporting_range(self, reporting_range : str):

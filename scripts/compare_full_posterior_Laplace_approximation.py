@@ -29,12 +29,8 @@ def plot_comparison(ax, DMPS, measurement, result_Laplace, result_MCMC, title, y
                                                             95 / 100
                                                             )
     
-    # HDI for Laplace
-    sigma = np.sqrt(np.sum(result_Laplace.post_covL_log10**2, axis=1))
-    k = norm.ppf(0.5 + 95 / 100 / 2)
-    
-    CI_lower_MAP = 10**(result_Laplace.post_mean_log10 - k * sigma)
-    CI_upper_MAP = 10**(result_Laplace.post_mean_log10 + k * sigma)
+    result_Laplace.set_reporting_range('full')
+    Laplace_median, Laplace_lower, Laplace_upper = result_Laplace.summary(95)
     
     ax.semilogx(DMPS.d_m, np.mean(result_MCMC.post_samples, axis=0) / binwidth, 'C0',
                 label='CM estimate (MCMC)'

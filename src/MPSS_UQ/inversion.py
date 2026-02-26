@@ -550,7 +550,7 @@ def Laplace_approximation_marginalize(sizer : MobilityParticleSizeSpectrometer,
         if count == 0:
             continue
         posterior_mixture_samples[start:start+count] = \
-            inversion_results[comp_idx].draw_posterior_samples(num=count)
+            inversion_results[comp_idx].get_posterior_samples(num=count)
         
         # Store the ion properties of each sample
         ion_property_samples[start:start+count] = ion_properties[comp_idx]
