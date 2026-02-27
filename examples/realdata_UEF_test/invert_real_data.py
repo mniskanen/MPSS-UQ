@@ -3,9 +3,14 @@
 from MPSS_UQ.measurement_data import MeasurementDataset
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer, lpm_to_m3s
 from MPSS_UQ.inversion import invert_dataset, smoothness_prior
-from MPSS_UQ.inversion_results import (summarize_samples, total_concentration)
+from MPSS_UQ.inversion_results import (summarize_samples, total_concentration,
+                                       concentration_in_range, geometric_mean_diameter,
+                                       mode_diameter, median_diameter, surface_area_concentration,
+                                       volume_concentration, condensation_sink, effective_diameter,
+                                       geometric_std,
+                                       )
 from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
-                                   plot_timeseries, plot_Ntot_timeseries)
+                                   plot_timeseries, plot_timeseries_1d)
 
 import yaml
 import numpy as np
@@ -64,7 +69,6 @@ DMPS = MobilityParticleSizeSpectrometer(DMPS_prop, n_bins=70)
 
 # Optionally, set these here if you don't plan to update them during inversion
 DMPS.set_charger_properties(1.35e-4, 1.60e-4)
-
 
 
 # =============================================================================
@@ -245,20 +249,83 @@ fig.tight_layout()
 plt.show()
 
 
-# Figure 4: Total particle numbers --------------------------------------------
-fig, ax = plt.subplots(nrows=1, ncols=1, num=4, clear=True)
-plot_Ntot_timeseries(ax, psd_posteriors)
-dm0 = 10**(np.log10(psd_posteriors[0].d_m[0]) - 0.5 * binwidth) * 1e9
-dm1 = 10**(np.log10(psd_posteriors[0].d_m[-1]) + 0.5 * binwidth) * 1e9
-ax.set_title(f'Total particle numbers between [{dm0 : .1f}, {dm1 : .1f}] nm', loc='left')
-
-
-
-# Figure 5: Check the datafit -------------------------------------------------
-fig, ax = plt.subplots(1, 1, num=5, clear=True)
+# Figure 4: Check the datafit -------------------------------------------------
+fig, ax = plt.subplots(1, 1, num=4, clear=True)
 
 # Take the measurement matching the inverted one
 meas = dataset.at_time(psd_posteriors.datetimes[idx_1])
 
 DMPS.set_operating_conditions(meas.temperature, meas.pressure)
 plot_datafit(ax, DMPS, meas.output, psd_posteriors[idx_1])
+
+
+
+# Figure 5: Total particle numbers --------------------------------------------
+fig, axs = plt.subplots(nrows=4, ncols=1, num=5, clear=True)
+
+Ntot_samples = psd_posteriors.propagate_to(total_concentration)
+nucl_samples = psd_posteriors.propagate_to(concentration_in_range, d_m, 1e-9, 25e-9)
+ait_samples = psd_posteriors.propagate_to(concentration_in_range, d_m, 25e-9, 100e-9)
+acc_samples = psd_posteriors.propagate_to(concentration_in_range, d_m, 100e-9, 1000e-9)
+
+dm0 = 10**(np.log10(psd_posteriors[0].d_m[0]) - 0.5 * binwidth) * 1e9
+dm1 = 10**(np.log10(psd_posteriors[0].d_m[-1]) + 0.5 * binwidth) * 1e9
+
+plot_timeseries_1d(axs[0], psd_posteriors.datetimes, Ntot_samples, coverage=CI_coverage,
+                   title=rf'$N_\mathrm{{tot}}$ between [{dm0 : .1f}, {dm1 : .1f}] nm')
+plot_timeseries_1d(axs[1], psd_posteriors.datetimes, nucl_samples, coverage=CI_coverage,
+                   title=r'$N_\mathrm{tot}$ in nucleation mode (1-25 nm)')
+plot_timeseries_1d(axs[2], psd_posteriors.datetimes, ait_samples, coverage=CI_coverage,
+                   title=r'$N_\mathrm{tot}$ in Aitken mode (25-100 nm)')
+plot_timeseries_1d(axs[3], psd_posteriors.datetimes, acc_samples, coverage=CI_coverage,
+                   title=r'$N_\mathrm{tot}$ in accumulation mode (100-1000 nm)')
+fig.tight_layout()
+
+
+
+# Figures 6-7: Plot some derived quantities -----------------------------------
+gmd_samples = psd_posteriors.propagate_to(geometric_mean_diameter, d_m)
+gstd_samples = psd_posteriors.propagate_to(geometric_std, d_m)
+mode_samples = psd_posteriors.propagate_to(mode_diameter, d_m)
+median_samples = psd_posteriors.propagate_to(median_diameter, d_m)
+surf_samples = psd_posteriors.propagate_to(surface_area_concentration, d_m)
+vol_samples = psd_posteriors.propagate_to(volume_concentration, d_m)
+CS_samples = psd_posteriors.propagate_to(condensation_sink, d_m)
+eff_diam_samples = psd_posteriors.propagate_to(effective_diameter, d_m)
+
+
+fig, axs = plt.subplots(4, 1, num=6, clear=True)
+fig.suptitle('Growth and surface area effects')
+
+plot_timeseries_1d(axs[0], psd_posteriors.datetimes, CS_samples, coverage=CI_coverage,
+                   title=r'Condensation sink')
+axs[0].set_ylabel(r's$^{-1}$')
+plot_timeseries_1d(axs[1], psd_posteriors.datetimes, surf_samples, coverage=CI_coverage,
+                   title=r'Total surace area concentration')
+axs[1].set_ylabel(r'$\mu$m$^2$ cm$^{-3}$')
+plot_timeseries_1d(axs[2], psd_posteriors.datetimes, vol_samples, coverage=CI_coverage,
+                   title=r'Total volume concentration')
+axs[2].set_ylabel(r'$\mu$m$^3$ cm$^{-3}$')
+plot_timeseries_1d(axs[3], psd_posteriors.datetimes, eff_diam_samples, coverage=CI_coverage,
+                   title=r'Effective diameter')
+axs[3].set_ylabel(r'$d_m$')
+fig.tight_layout()
+
+
+fig, axs = plt.subplots(4, 1, num=7, clear=True)
+fig.suptitle('Shape evolution')
+
+ymin = np.floor(dataset[0].d_m_data[0] * 1e8) * 1e-8
+ymax = np.ceil(dataset[0].d_m_data[-1] * 1e8) * 1e-8 * 0.5
+plot_timeseries_1d(axs[0], psd_posteriors.datetimes, gmd_samples, coverage=CI_coverage,
+                   title='Geometric mean diameter', log_yscale=True, ymin=ymin, ymax=ymax)
+axs[0].set_ylabel(r'$d_m$')
+plot_timeseries_1d(axs[1], psd_posteriors.datetimes, gstd_samples, coverage=CI_coverage,
+                   title='Geometric std', ymin=1)
+plot_timeseries_1d(axs[2], psd_posteriors.datetimes, mode_samples, coverage=CI_coverage,
+                   title=r'Mode diameter', log_yscale=True, ymin=ymin, ymax=ymax)
+axs[2].set_ylabel(r'$d_m$')
+plot_timeseries_1d(axs[3], psd_posteriors.datetimes, median_samples, coverage=CI_coverage,
+                   title=r'Median diameter', log_yscale=True, ymin=ymin, ymax=ymax)
+axs[3].set_ylabel(r'$d_m$')
+fig.tight_layout()

@@ -7,8 +7,7 @@ import matplotlib.colors as colors
 import matplotlib.ticker as tck
 
 from MPSS_UQ.inversion_results import (highest_density_interval, InversionResult,
-                                       InversionResultSeries, total_concentration,
-                                       summarize_samples)
+                                       InversionResultSeries, summarize_samples)
 
 
 def plot_psd(ax, d_m, N, *args, **kwargs):
@@ -49,11 +48,16 @@ def plot_posterior_summary(ax, psd_posterior, CI_coverage=95, color='C0'):
     ax.legend()
 
 
-def plot_Ntot_timeseries(ax,
-                         psd_posteriors : InversionResultSeries,
-                         CI_coverage=95,
-                         color='C0',
-                         ):
+def plot_timeseries_1d(ax,
+                       datetimes,
+                       samples,
+                       coverage=95,
+                       color='C0',
+                       title=None,
+                       log_yscale=False,
+                       ymin=None,
+                       ymax=None,
+                       ):
     '''
     Plot total particle count (Ntot) time series with credible intervals.
 
@@ -63,32 +67,35 @@ def plot_Ntot_timeseries(ax,
         Axes to plot on.
     psd_posteriors : InversionResultSeries
         Inversion results across multiple measurements.
-    CI_coverage : float in (0, 100), optional
+    coverage : float in (0, 100), optional
         Credible mass percentage for the HDI band. Default is 95.
     '''
     
-    Ntot_samples = psd_posteriors.propagate_to(total_concentration)
-    Ntots, CI_low, CI_high = summarize_samples(Ntot_samples, coverage=CI_coverage)
+    median, CI_low, CI_high = summarize_samples(samples, coverage=coverage)
     
-    ax.fill_between(psd_posteriors.datetimes,
+    label = 'Credible interval' if not coverage else f'{coverage} % credible interval'
+    ax.fill_between(datetimes,
                     CI_low,
                     CI_high,
                     alpha=0.5,
                     facecolor=color,
-                    label=f'{CI_coverage} % credible interval'
+                    label=label,
                     )
     
-    ax.plot(psd_posteriors.datetimes, Ntots, color=color, linewidth=0.5,
-            label=r'Median $N_\mathrm{tot}$')
+    ax.plot(datetimes, median, color=color, linewidth=0.5,
+            label='Median estimate')
     
-    ax.set_xlim(psd_posteriors.datetimes[0], psd_posteriors.datetimes[-1] + np.timedelta64(6, "m"))
-    ax.set_ylim([0, np.quantile(CI_high, 1)])
-    ax.set_ylabel(r'$N_\mathrm{tot}$')
-    ax.set_xlabel('Time')
+    typical_dt = np.median(np.diff(datetimes))
+    ax.set_xlim(datetimes[0], datetimes[-1] + typical_dt)
+    ymax = np.quantile(CI_high, 1) if ymax is None else ymax
+    ymin = np.quantile(CI_low, 0) if ymin is None else ymin
+    if log_yscale:
+        ax.set_yscale('log')
+    ax.set_ylim([ymin, ymax])
     ax.grid('on')
     ax.legend()
     
-    ax.set_title('Total particle numbers', loc='left')
+    ax.set_title(title, loc='left')
 
 
 def plot_timeseries(ax, datetimes, d_m, Z,
