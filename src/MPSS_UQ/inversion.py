@@ -9,7 +9,7 @@ from joblib import Parallel, delayed
 
 from tqdm import tqdm
 
-from MPSS_UQ.inversion_results import InversionResult, InversionResultSeries
+from MPSS_UQ.inversion_results import PSDPosterior, PSDPosteriorSeries
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 
 # Prevent the system from throttling down the CPU by giving any process that uses
@@ -54,7 +54,7 @@ def invert_psd(
     
     num_samples is the number of posterior samples returned when using sampling methods.
     
-    Returns an InversionResult containing either the Laplace approximation or posterior samples.
+    Returns an PSDPosterior containing either the Laplace approximation or posterior samples.
     '''
     
     # Calculate the measured reporting_range:
@@ -89,7 +89,7 @@ def invert_psd(
             marginalization_grid=marginalization_grid,
             num_samples=num_samples,
             )
-        return InversionResult(sizer.d_m,
+        return PSDPosterior(sizer.d_m,
                                sl_measured,
                                post_samples=posterior_samples,
                                ion_property_samples=ion_property_samples,
@@ -100,12 +100,12 @@ def invert_psd(
                 num_samples = 100000
                 
             posterior_samples = run_mcmc(sizer, prior, measurement, num_samples=num_samples)
-            return InversionResult(sizer.d_m, sl_measured, post_samples=posterior_samples)
+            return PSDPosterior(sizer.d_m, sl_measured, post_samples=posterior_samples)
         
         else:
             # Laplace approximation
             MAP, post_cov_L = Laplace_approximation(sizer, prior, measurement)
-            return InversionResult(sizer.d_m,
+            return PSDPosterior(sizer.d_m,
                                    sl_measured,
                                    post_mean_log10=MAP,
                                    post_covL_log10=post_cov_L,
@@ -128,10 +128,10 @@ def invert_dataset(
     n_jobs: int | None = None,
     sort_for_cache: bool = True,
     progress: bool = True,
-    ) -> InversionResultSeries:
+    ) -> PSDPosteriorSeries:
     """
     Invert an entire dataset of MPSS measurements (optionally in parallel)
-    and return an InversionResultSeries with per-measurement results.
+    and return an PSDPosteriorSeries with per-measurement results.
 
     Parameters
     ----------
@@ -160,7 +160,7 @@ def invert_dataset(
 
     Returns
     -------
-    InversionResultSeries
+    PSDPosteriorSeries
         Holds results, datetimes, and supports downstream plotting/summary.
     """
     
@@ -168,9 +168,9 @@ def invert_dataset(
         prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
     # Build output container using input datetimes if available
     try:
-        inv_dataset = InversionResultSeries(dataset.datetimes)
+        inv_dataset = PSDPosteriorSeries(dataset.datetimes)
     except AttributeError:
-        inv_dataset = InversionResultSeries(
+        inv_dataset = PSDPosteriorSeries(
             [getattr(dataset[i], "datetime", None) for i in range(len(dataset))]
             )
 
@@ -218,12 +218,12 @@ def invert_dataset(
         # it is safe to mutate the DMPS inside 'run_inversion'. With a different backend this
         # may not be the case.
         # TODO: could do this in batches to help memory usage with huge datasets
-        results = Parallel(n_jobs=n_jobs, backend=backend)(
+        psd_posteriors = Parallel(n_jobs=n_jobs, backend=backend)(
             delayed(_solve_one)(task) for task in iterator
             )
-        # Assign results to original indices
-        for idx, res in results:
-            inv_dataset.assign_result(idx, res)
+        # Assign psd_posteriors to original indices
+        for idx, post in psd_posteriors:
+            inv_dataset.assign_posterior(idx, post)
     else:
         iterator = sortable
         if progress:
@@ -238,7 +238,7 @@ def invert_dataset(
                 num_samples=num_samples,
                 use_mcmc=use_mcmc,
             )
-            inv_dataset.assign_result(idx, res)
+            inv_dataset.assign_posterior(idx, res)
     
     return inv_dataset
 
@@ -460,7 +460,7 @@ def Laplace_approximation_marginalize(sizer : MobilityParticleSizeSpectrometer,
     
     ion_properties = np.zeros((n_invert, 3))
     mixture_weights = np.zeros(n_invert)
-    inversion_results = []
+    psd_posteriors = []
     
     # Starting guess for the Laplace approximation
     N_guess = np.ones(prior['inv_covariance'].shape[1]) * 0
@@ -491,8 +491,8 @@ def Laplace_approximation_marginalize(sizer : MobilityParticleSizeSpectrometer,
                     MAP_estimate_log10, posterior_cov_L_log10 = Laplace_approximation(
                         sizer, prior, measurement, N_start=N_guess,
                         )
-                    inversion_results.append(
-                        InversionResult(sizer.d_m,
+                    psd_posteriors.append(
+                        PSDPosterior(sizer.d_m,
                                         post_mean_log10=MAP_estimate_log10,
                                         post_covL_log10=posterior_cov_L_log10,
                                         )
@@ -550,7 +550,7 @@ def Laplace_approximation_marginalize(sizer : MobilityParticleSizeSpectrometer,
         if count == 0:
             continue
         posterior_mixture_samples[start:start+count] = \
-            inversion_results[comp_idx].get_posterior_samples(num=count)
+            psd_posteriors[comp_idx].get_samples(num=count)
         
         # Store the ion properties of each sample
         ion_property_samples[start:start+count] = ion_properties[comp_idx]

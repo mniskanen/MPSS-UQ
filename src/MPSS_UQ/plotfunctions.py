@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
 
-from MPSS_UQ.inversion_results import (highest_density_interval, InversionResult,
-                                       InversionResultSeries, summarize_samples)
+from MPSS_UQ.inversion_results import (highest_density_interval, PSDPosterior,
+                                       PSDPosteriorSeries, summarize_samples)
 
 
 def plot_psd(ax, d_m, N, *args, **kwargs):
@@ -27,7 +27,7 @@ def plot_psd(ax, d_m, N, *args, **kwargs):
 def plot_posterior_summary(ax, psd_posterior, CI_coverage=95, color='C0'):
     ''' Plot a simple posterior summary (mean value and credible intervals).
     Input:
-        psd_posterior - instance of an InversionResult
+        psd_posterior - instance of PSDPosterior
         CI_coverage - percentage of posterior the credible intervals should cover
     '''
     
@@ -65,7 +65,7 @@ def plot_timeseries_1d(ax,
     ----------
     ax : matplotlib.axes.Axes
         Axes to plot on.
-    psd_posteriors : InversionResultSeries
+    psd_posteriors : PSDPosteriorSeries
         Inversion results across multiple measurements.
     coverage : float in (0, 100), optional
         Credible mass percentage for the HDI band. Default is 95.
@@ -234,7 +234,7 @@ def plot_system_matrix(ax, DMPS, title=None):
     cbar = ax.figure.colorbar(im, ax=ax, label='Matrix values')
 
 
-def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverage=95):
+def plot_datafit(ax, DMPS, output_measured, psd_posterior : PSDPosterior, CI_coverage=95):
     # Data prediction
     n_samples = 5000
     output_predicted_samples = np.zeros((n_samples, len(output_measured)))
@@ -242,13 +242,13 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
     rng = np.random.default_rng()
     
     # The forward model can only be run for the full length PSD
-    reporting_range = result.reporting_range
+    reporting_range = psd_posterior.reporting_range
     if reporting_range == 'measured':
-        result.set_reporting_range('full')
+        psd_posterior.set_reporting_range('full')
     
-    if result.input_mode == 'samples':
+    if psd_posterior.input_mode == 'samples':
         # Limit the max number of samples to the max number available
-        n_samples = min(len(result.post_samples), 5000)
+        n_samples = min(len(psd_posterior.post_samples), 5000)
         
         def _update_ion_props(ion_properties):
             if DMPS.charging_model_name == 'LYF-interp':
@@ -257,36 +257,36 @@ def plot_datafit(ax, DMPS, output_measured, result : InversionResult, CI_coverag
                 DMPS.set_charger_properties(ion_properties[0], ion_properties[1],
                                             ion_properties[2])
         
-        sample_idxs = rng.choice(len(result.post_samples), size=n_samples, replace=False)
+        sample_idxs = rng.choice(len(psd_posterior.post_samples), size=n_samples, replace=False)
         # Evaluate the posterior samples model output in order so that we minimize the number
         # of times the charger properties need to be reset
         sample_idxs.sort()
-        if hasattr(result, 'ion_property_samples'):
-            ion_properties = result.ion_property_samples[sample_idxs[0]]
+        if hasattr(psd_posterior, 'ion_property_samples'):
+            ion_properties = psd_posterior.ion_property_samples[sample_idxs[0]]
             _update_ion_props(ion_properties)
         
         for i, sample_idx in enumerate(sample_idxs):
             # Check if ion properties changed, do we need to update DMPS
-            if hasattr(result, 'ion_property_samples'):
-                if np.any(ion_properties != result.ion_property_samples[sample_idx]):
-                    ion_properties = result.ion_property_samples[sample_idx]
+            if hasattr(psd_posterior, 'ion_property_samples'):
+                if np.any(ion_properties != psd_posterior.ion_property_samples[sample_idx]):
+                    ion_properties = psd_posterior.ion_property_samples[sample_idx]
                     _update_ion_props(ion_properties)
             
             output_predicted_samples[i] = DMPS.forward_model(
-                np.log10(result.post_samples[sample_idx])
+                np.log10(psd_posterior.post_samples[sample_idx])
                 )
     
-    elif result.input_mode == 'gaussian-log10':
+    elif psd_posterior.input_mode == 'gaussian-log10':
         for i in range(n_samples):
             output_predicted_samples[i] = DMPS.forward_model(
-                np.log10(result.get_posterior_samples(num=1).squeeze())
+                np.log10(psd_posterior.get_samples(num=1).squeeze())
                 )
     else:
-        raise ValueError('Unknown result input mode.')
+        raise ValueError('Unknown PSDPosterior input mode.')
     
     # Put the reporting range back to what it was when calling this function
     if reporting_range == 'measured':
-        result.set_reporting_range('measured')
+        psd_posterior.set_reporting_range('measured')
     
     output_predicted_median_noiseless = np.median(output_predicted_samples, axis=0)
     

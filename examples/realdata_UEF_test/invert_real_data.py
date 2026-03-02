@@ -173,7 +173,7 @@ fig, axs = plt.subplots(nrows=2, ncols=1, num=2, clear=True)
 
 prior = smoothness_prior(d_m, 0, 8/16, 1.5)
 prior_variance = np.diag(prior['covariance'])
-post_variance = psd_posteriors.posterior_variance()
+post_variance = psd_posteriors.variance()
 VR = np.log10(post_variance / prior_variance).T
 
 plot_timeseries(axs[0], psd_posteriors.datetimes, d_m, VR,

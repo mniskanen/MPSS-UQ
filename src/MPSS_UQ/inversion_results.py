@@ -100,7 +100,7 @@ def total_concentration(psd):
     psd : ndarray, shape (n_bins,) or (n_samples, n_bins)
         Particle size distribution as number concentrations per bin.
         A single PSD vector or a batch of samples (e.g., as returned
-        by :meth:`InversionResult.get_posterior_samples`).
+        by :meth:`PSDPosterior.get_samples`).
 
     Returns
     -------
@@ -375,9 +375,10 @@ def summarize_samples(samples, coverage=95, use_mean=False):
     return center, ci_lower, ci_upper
 
 
-class InversionResult:
+
+class PSDPosterior:
     """
-    Represents the inversion result for a single measurement.
+    Posterior distribution of a particle size distribution from a single measurement.
 
     Supports specifying the posterior with
         1) a log10-Gaussian approximation (MAP + covariance),
@@ -468,7 +469,7 @@ class InversionResult:
             raise ValueError("Unknown reporting range. Use 'measured' or 'full'.")
     
     
-    def _postprocess_results_from_covariance_log10(self, CI):
+    def _summary_from_covariance_log10(self, CI):
         """ Calculate the posterior median and highest density interval at credible level CI
         for the lognormal density in N.
         The HDI doesn't have an analytical expression, it must be solved numerically. For N,
@@ -528,7 +529,7 @@ class InversionResult:
         return post_median, CI_lower, CI_upper
     
     
-    def _postprocess_results_from_samples(self, CI):
+    def _summary_from_samples(self, CI):
         """ Calculate the posterior median and highest density interval at credible level CI
         from the posterior samples of N.
         """
@@ -538,7 +539,7 @@ class InversionResult:
         return post_median, hdi_low, hdi_high
             
     
-    def posterior_variance(self):
+    def variance(self):
         """ Return the posterior variance.
         """
         if self.input_mode == 'gaussian-log10':
@@ -557,9 +558,9 @@ class InversionResult:
             raise ValueError('Invalid value for posterior coverage. It should be in (0, 100).')
         
         if self.input_mode == 'gaussian-log10':
-            return self._postprocess_results_from_covariance_log10(coverage)
+            return self._summary_from_covariance_log10(coverage)
         elif self.input_mode == 'samples':
-            return self._postprocess_results_from_samples(coverage)
+            return self._summary_from_samples(coverage)
     
     
     def propagate_to(self, func, *args, num=None, **kwargs):
@@ -588,12 +589,12 @@ class InversionResult:
         -------
         result : ndarray, shape (1, n_samples, ...)
         """
-        samples = self.get_posterior_samples(num=num)
+        samples = self.get_samples(num=num)
         return func(samples, *args, **kwargs)[np.newaxis, ...]
 
     
     
-    def get_posterior_samples(self, num=None):
+    def get_samples(self, num=None):
         """
         Return posterior samples in linear (N) space, shape (num, n_bins).
     
@@ -636,59 +637,60 @@ class InversionResult:
                         ) * np.log(10)).T
 
 
-class InversionResultSeries:
+class PSDPosteriorSeries:
     """
-    Container for inversion results across multiple measurements.
+    Time series of posterior distributions of particle size distributions across
+    multiple measurements.
     """
 
     def __init__(self, datetimes):
         self.datetimes = datetimes
-        self._results = [None] * len(datetimes)
+        self._posteriors = [None] * len(datetimes)
     
     
-    def assign_result(self, idx, result: InversionResult):
-        self._results[idx] = result
+    def assign_posterior(self, idx, posterior: PSDPosterior):
+        self._posteriors[idx] = posterior
     
     
-    def posterior_variance(self):
+    def variance(self):
         """
-        Returns an array of posterior variances for all results.
+        Returns an array of posterior variances for all posteriors.
         """
-        num_results = len(self._results)
-        num_d_m = self._results[0].d_m.shape[0]
-        posterior_variances = np.zeros((num_results, num_d_m))
+        num_posteriors = len(self._posteriors)
+        num_d_m = self._posteriors[0].d_m.shape[0]
+        variances = np.zeros((num_posteriors, num_d_m))
         
-        for i in range(num_results):
-            posterior_variances[i] = self._results[i].posterior_variance()
+        for i in range(num_posteriors):
+            variances[i] = self._posteriors[i].variance()
         
-        return posterior_variances
+        return variances
     
     
     def summary(self, *args, n_jobs=-1, **kwargs):
         """
-        Returns arrays of posterior median, lower CI, upper CI for all results.
+        Returns arrays of posterior median, lower CI, upper CI for all posteriors.
         
         Parameters
         ----------
         n_jobs : int
             Number of worker processes. -1 uses all cores.
         """
-        num_results = len(self._results)
-        num_d_m = self._results[0].d_m.shape[0]
+        num_posteriors = len(self._posteriors)
+        num_d_m = self._posteriors[0].d_m.shape[0]
     
-        posterior_medians = np.zeros((num_results, num_d_m))
+        posterior_medians = np.zeros((num_posteriors, num_d_m))
         CI_lower = np.zeros_like(posterior_medians)
         CI_upper = np.zeros_like(posterior_medians)
     
         def _process(i):
-            med, lo, up = self._results[i].summary(*args, **kwargs)
+            med, lo, up = self._posteriors[i].summary(*args, **kwargs)
             posterior_medians[i] = med
             CI_lower[i] = lo
             CI_upper[i] = up
     
         Parallel(n_jobs=n_jobs, backend="threading", require="sharedmem")(
             delayed(_process)(i)
-            for i in tqdm(range(num_results), desc="Calculating posterior summaries")
+            for i in tqdm(range(num_posteriors), desc="Calculating posterior summaries")
         )
 
         return posterior_medians, CI_lower, CI_upper
@@ -715,39 +717,38 @@ class InversionResultSeries:
         result : ndarray, shape (n_measurements, n_samples, ...)
         """
         return np.array([
-            res.propagate_to(func, *args, num=num, **kwargs).squeeze(axis=0)
-            for res in self._results
+            posterior.propagate_to(func, *args, num=num, **kwargs).squeeze(axis=0)
+            for posterior in self._posteriors
             ])
-
     
     
     def set_reporting_range(self, reporting_range : str):
-        for i in range(len(self._results)):
-            self._results[i].set_reporting_range(reporting_range)
+        for i in range(len(self._posteriors)):
+            self._posteriors[i].set_reporting_range(reporting_range)
     
     
     def _return_subset(self, indices):
             """
-            Build a new InversionResultSeries with a subset of rows (as a view when possible).
+            Build a new PSDPosteriorSeries with a subset of rows (as a view when possible).
             `indices` can be a slice, a list/ndarray of ints, or a boolean mask.
             """
             new_datetimes = self.datetimes[indices]
             
-            # Reuse the same InversionResult objects
+            # Reuse the same PSDPosterior objects
             if isinstance(indices, (slice, list, np.ndarray)):
-                new_results = (np.array(self._results, dtype=object)[indices]).tolist()
+                new_posteriors = (np.array(self._posteriors, dtype=object)[indices]).tolist()
             else:
                 # Fallback for other index types
-                new_results = [self._results[indices]]
+                new_posteriors = [self._posteriors[indices]]
             
-            new_series = InversionResultSeries(new_datetimes)
-            new_series._results = new_results
+            new_series = PSDPosteriorSeries(new_datetimes)
+            new_series._posteriors = new_posteriors
             return new_series
     
     
     def between_times(self, start, end, closed="both"):
         """
-        Return a new InversionResultSeries restricted to [start, end] using the chosen
+        Return a new PSDPosteriorSeries restricted to [start, end] using the chosen
         boundary convention.
         
         Parameters
@@ -776,19 +777,19 @@ class InversionResultSeries:
     
     def __getitem__(self, idx):
         """
-        - int -> InversionResult
-        - slice / list / ndarray / boolean mask -> InversionResultSeries
+        - int -> PSDPosterior
+        - slice / list / ndarray / boolean mask -> PSDPosteriorSeries
         """
         if isinstance(idx, (int, np.integer)):
             # Support negative indices (Python/NumPy semantics)
             if idx < 0:
-                idx += len(self._results)
-            if idx < 0 or idx >= len(self._results):
+                idx += len(self._posteriors)
+            if idx < 0 or idx >= len(self._posteriors):
                 raise IndexError("Index out of range.")
-            return self._results[idx]
+            return self._posteriors[idx]
         # For multi-select, return a sliced dataset
         return self._return_subset(idx)
     
     
     def __len__(self):
-        return len(self._results)
+        return len(self._posteriors)

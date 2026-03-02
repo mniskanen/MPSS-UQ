@@ -103,7 +103,7 @@ prior = smoothness_prior(DMPS_inv.d_m,
                          log_standard_deviation
                          )
 
-result = invert_psd(DMPS_inv, measurement, prior)
+psd_posterior = invert_psd(DMPS_inv, measurement, prior)
 
 
 
@@ -130,6 +130,7 @@ prior = smoothness_prior(DMPS_marg.d_m,
                          )
 # Marginalize over charger ion mobilities
 result_marg = invert_psd(DMPS_marg,
+psd_posterior_marg = invert_psd(DMPS_marg,
                          measurement,
                          prior,
                          marginalize_ion_mobility=True,
