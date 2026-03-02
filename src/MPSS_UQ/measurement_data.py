@@ -293,6 +293,9 @@ def generate_DMPS_measurement(DMPS_prop,
     DMPS_output += noise_std * rng.normal(loc=0.0, scale=1.0,
                                           size=DMPS_output.shape)
     
+    # Restrict the simulated noisy output to nonnegative values
+    DMPS_output = np.clip(DMPS_output, 0, None)
+    
     # Create a Measurement object
     measurement = Measurement(None,
                               DMPS.d_m_data,
