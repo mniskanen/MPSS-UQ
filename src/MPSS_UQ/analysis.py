@@ -29,8 +29,8 @@ def summarize_samples(samples, coverage=95, use_mean=False):
     Returns
     -------
     center : ndarray
-    ci_lower : ndarray
-    ci_upper : ndarray
+    CI_lower : ndarray
+    CI_upper : ndarray
     """
     if not (0 < coverage < 100):
         raise ValueError("coverage must be in (0, 100)")
@@ -44,17 +44,17 @@ def summarize_samples(samples, coverage=95, use_mean=False):
     shape = work.shape[:-1]
     flat = work.reshape(-1, work.shape[-1])
 
-    ci_lower, ci_upper = highest_density_interval(flat, coverage / 100.0)
-    ci_lower = ci_lower.reshape(shape)
-    ci_upper = ci_upper.reshape(shape)
+    CI_lower, CI_upper = highest_density_interval(flat, coverage / 100.0)
+    CI_lower = CI_lower.reshape(shape)
+    CI_upper = CI_upper.reshape(shape)
 
     # Squeeze leading dimension if single measurement
     if center.shape[0] == 1:
         center = center.squeeze(axis=0)
-        ci_lower = ci_lower.squeeze(axis=0)
-        ci_upper = ci_upper.squeeze(axis=0)
+        CI_lower = CI_lower.squeeze(axis=0)
+        CI_upper = CI_upper.squeeze(axis=0)
 
-    return center, ci_lower, ci_upper
+    return center, CI_lower, CI_upper
 
 
 
@@ -107,11 +107,11 @@ def highest_density_interval(samples, percentage):
 # Derived quantities
 # ---------------------------------------------------------------------------
 
-def relative_hdi_width(median, ci_lower, ci_upper, eps=1e-4):
+def relative_hdi_width(median, CI_lower, CI_upper, eps=1e-4):
     """
     Relative width of the highest density interval.
 
-    Defined as (ci_upper - ci_lower) / (median + eps).  The small constant
+    Defined as (CI_upper - CI_lower) / (median + eps).  The small constant
     *eps* prevents division by zero in size bins where the posterior median
     is near zero.
 
@@ -119,9 +119,9 @@ def relative_hdi_width(median, ci_lower, ci_upper, eps=1e-4):
     ----------
     median : ndarray
         Posterior median, shape (n_bins,) or (n_measurements, n_bins).
-    ci_lower : ndarray
+    CI_lower : ndarray
         Lower bound of the HDI, same shape as *median*.
-    ci_upper : ndarray
+    CI_upper : ndarray
         Upper bound of the HDI, same shape as *median*.
     eps : float, optional
         Regularisation constant (default 1e-4).
@@ -131,7 +131,7 @@ def relative_hdi_width(median, ci_lower, ci_upper, eps=1e-4):
     rel_width : ndarray
         Same shape as the inputs.
     """
-    return (ci_upper - ci_lower) / (median + eps)
+    return (CI_upper - CI_lower) / (median + eps)
 
 
 def total_concentration(psd):

@@ -6,9 +6,10 @@ from MPSS_UQ.inversion import invert_dataset, smoothness_prior
 from MPSS_UQ.analysis import (total_concentration, concentration_in_range,
                               geometric_mean_diameter, mode_diameter, median_diameter,
                               surface_area_concentration, volume_concentration, condensation_sink,
-                              effective_diameter, geometric_std)
+                              effective_diameter, geometric_std, relative_hdi_width)
 from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
-                                   plot_timeseries_1d, plot_timeseries_2d)
+                                   plot_timeseries_1d, plot_timeseries_2d,
+                                   add_checkerboard_background)
 
 import yaml
 import numpy as np
@@ -119,51 +120,32 @@ plot_timeseries_2d(axs[0], psd_posteriors.datetimes, d_m, Z,
 axs[0].set_title(r'Posterior median of $\mathbf{N}$')
 
 # Subplot 2: Uncertainties as relative CI width
-# Safeguard for zero/near-zero lower bounds
-eps = 0.0001
-W = ((CI_upper - CI_lower) / (medians + eps)).T
-
+W = relative_hdi_width(medians, CI_lower, CI_upper).T
 plot_timeseries_2d(axs[1], psd_posteriors.datetimes, d_m, W,
-                # log_color_scale=False,
                 cbar_label=fr'Relative {CI_coverage} % HDI width',
                 cmap='inferno',
-                # vmin=0.2,
-                # vmax=140,
+                cbar_as_perc=True,
                 )
 axs[1].set_title(fr'Uncertainty (relative {CI_coverage} % HDI width)')
 
 
 # Subplot 3: PSD estimate with uncertainty as the alpha channel
-norm_psd = colors.LogNorm(vmin=np.nanquantile(Z, 0.001),
-                           vmax=np.nanmax(Z))
-cmap_psd = mpl.colormaps['viridis']
 
 # Choose values for W
-W_low = 1  # width below which estimate is ''accurate'' (alpha == 1)
-W_high = 10  # width above which estimate is ''inaccurate'' (alpha == 0)
+W_low = 0.5  # width below which estimate is ''accurate'' (alpha == 1)
+W_high = 5  # width above which estimate is ''inaccurate'' (alpha == 0)
 W_clipped = np.clip(W, W_low, W_high)
 alpha = 1 - (W_clipped - W_low) / (W_high - W_low)
-rgba = cmap_psd(norm_psd(Z))
-rgba[..., -1] = alpha
 
-# Draw empty mesh, then set RGBA facecolors
-im2 = plot_timeseries(axs[2], psd_posteriors.datetimes, d_m, Z,
+im2 = plot_timeseries_2d(axs[2], psd_posteriors.datetimes, d_m, Z,
                       cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
+                      alpha=alpha
                       )
-im2.set_cmap(None)
-im2.set_norm(None)
-im2.set_array(None)
-im2.set_facecolors(rgba.reshape(-1, 4))
-
-# Colorbar from PSD only (not alpha)
-sm = plt.cm.ScalarMappable(norm=norm_psd, cmap=cmap_psd)
-sm.set_array([])
-axs[2]._my_colorbar.update_normal(sm)
+add_checkerboard_background(axs[2], check_size_px=10, light=0.92, dark=0.75)
 axs[2].set_title('Posterior median with relative uncertainty (= transparency)')
 
 fig.tight_layout()
 plt.show()
-
 
 
 # Figure 2: Variance reduction and posterior CI width plots -------------------

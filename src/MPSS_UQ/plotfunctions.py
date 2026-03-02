@@ -3,6 +3,7 @@
 import math
 import numpy as np
 import numpy.ma as ma
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
@@ -183,6 +184,7 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
                     cbar_label=None,
                     cbar_as_perc=False,
                     gap_factor=1.5,
+                    alpha=None,  # optional per-cell alpha, shape (n_bins, n_meas)
                     ):
     '''
     Plot a 2D time-size field as a pcolormesh with automatic gap masking.
@@ -209,6 +211,10 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
         Format colorbar tick labels as percentages.
     gap_factor : float, optional
         Gap threshold as a multiple of the median time step.
+    alpha : array-like or None, optional
+        Per-cell transparency, shape (n_bins, n_meas). Values in [0, 1].
+        When provided, the mesh is rendered with per-cell RGBA facecolors
+        and gap columns are forced to alpha=0 (fully transparent).
 
     Returns
     -------
@@ -260,6 +266,23 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
         _norm = colors.Normalize(vmin=vmin, vmax=vmax)
     
     im = ax.pcolormesh(date_edges, d_m_edges, Z_masked, cmap=cmap, norm=_norm, shading='auto')
+    
+    # Per-cell alpha
+    if alpha is not None:
+        alpha = np.asarray(alpha, dtype=float)
+        cmap_obj = mpl.colormaps[cmap] if isinstance(cmap, str) else cmap
+        rgba = cmap_obj(_norm(Z))           # shape (n_bins, n_meas, 4)
+        rgba[..., 3] = alpha                # apply per-cell alpha
+
+        # Force gap columns to fully transparent
+        rgba[:, gap_cols, 3] = 0.0
+
+        # Also force any originally masked cells to transparent
+        if ma.isMaskedArray(Z_masked):
+            rgba[Z_masked.mask, 3] = 0.0
+
+        im.set_array(None)
+        im.set_facecolors(rgba.reshape(-1, 4))
     
     if show_cbar:
         cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
@@ -477,3 +500,86 @@ def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None, color='C0'):
         ax.plot([Ntot_true, Ntot_true], [0, 0.2 * high_y], 'k-', linewidth=5)
         ax.annotate(r'True $N_\mathrm{tot}$',
                      xy=(Ntot_true, 0.22 * high_y), ha='center', size=10)
+
+
+def add_checkerboard_background(ax, check_size_px=8, light=0.92, dark=0.75, zorder=0):
+    """
+    Add a checkerboard background to a Matplotlib axes.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to add the background to.
+    check_size_px : int
+        Size of each checker square in pixels.
+    light : float
+        Grey level for the light squares (0–1).
+    dark : float
+        Grey level for the dark squares (0–1).
+    zorder : float
+        Drawing order for the background axes.
+    """
+
+    # Create an inset axes that fills the entire parent axes
+    ax_bg = ax.inset_axes([0, 0, 1, 1], transform=ax.transAxes, zorder=zorder)
+    ax_bg.set_axis_off()
+
+    # Store state on the axes object for the draw callback
+    ax_bg._checker_params = {
+        'check_size_px': check_size_px,
+        'light': light,
+        'dark': dark,
+        'img_artist': None,
+    }
+
+    def _update_checkerboard(event=None):
+        """Regenerate the checkerboard image based on current pixel size of the axes."""
+        params = ax_bg._checker_params
+
+        # Get the bounding box of the background axes in pixels
+        bbox = ax_bg.get_window_extent()
+        w_px = max(int(np.ceil(bbox.width)), 1)
+        h_px = max(int(np.ceil(bbox.height)), 1)
+
+        s = params['check_size_px']
+
+        # Number of checker cells needed
+        n_cols = int(np.ceil(w_px / s))
+        n_rows = int(np.ceil(h_px / s))
+
+        # Build checkerboard at cell resolution
+        j = np.arange(n_cols)[None, :]
+        i = np.arange(n_rows)[:, None]
+        checker = ((i + j) % 2).astype(np.float64)
+
+        # Map to grey levels: 0 -> light, 1 -> dark
+        checker_grey = np.where(checker == 0, params['light'], params['dark'])
+
+        # Stack to RGB
+        checker_rgb = np.stack([checker_grey] * 3, axis=-1)
+
+        if params['img_artist'] is None:
+            params['img_artist'] = ax_bg.imshow(
+                checker_rgb,
+                origin='lower',
+                aspect='auto',
+                interpolation='nearest',
+                extent=[0, 1, 0, 1],  # fill the axes in axes coordinates
+            )
+            ax_bg.set_xlim(0, 1)
+            ax_bg.set_ylim(0, 1)
+        else:
+            params['img_artist'].set_data(checker_rgb)
+            # Extent stays [0,1,0,1]; imshow stretches to fill
+
+    # Draw once immediately (for initial render)
+    _update_checkerboard()
+
+    # Connect to resize and draw events so it updates on layout changes
+    fig = ax.get_figure()
+    fig.canvas.mpl_connect('resize_event', _update_checkerboard)
+    fig.canvas.mpl_connect('draw_event', _update_checkerboard)
+
+    # Make the foreground axes transparent and on top
+    ax.set_zorder(zorder + 1)
+    ax.patch.set_alpha(0)
