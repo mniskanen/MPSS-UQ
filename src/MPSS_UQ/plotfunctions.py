@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import math
 import numpy as np
 import numpy.ma as ma
 import matplotlib.pyplot as plt
@@ -49,6 +50,64 @@ def plot_posterior_summary(ax, psd_posterior : PSDPosterior, CI_coverage=95, col
     ax.legend()
 
 
+def _detect_gaps(datetimes, gap_factor=1.5):
+    """
+    Detect measurement gaps in a datetime array.
+
+    Parameters
+    ----------
+    datetimes : array-like of datetime64 (or similar)
+        Sorted measurement timestamps.
+    gap_factor : float
+        A gap is declared when the interval between consecutive
+        timestamps exceeds gap_factor * median(dt).
+
+    Returns
+    -------
+    typical_dt : timedelta
+        Median time step.
+    gap_mask : ndarray of bool, shape (len(datetimes) - 1,)
+        True where the interval [t_i, t_{i+1}) is a gap.
+    """
+    dt = np.diff(datetimes)
+    typical_dt = np.median(dt)
+    gap_thresh = gap_factor * typical_dt
+    gap_mask = dt > gap_thresh
+    return typical_dt, gap_mask
+
+
+def _contiguous_segments(datetimes, gap_factor=1.5):
+    """
+    Return a list of slices for contiguous (non-gap) segments.
+
+    Each slice ``s`` satisfies: within ``datetimes[s]`` there are
+    no gaps larger than ``gap_factor * median(dt)``.
+
+    Parameters
+    ----------
+    datetimes : array-like of datetime64
+    gap_factor : float
+
+    Returns
+    -------
+    segments : list of slice
+    typical_dt : timedelta
+    """
+    typical_dt, gap_mask = _detect_gaps(datetimes, gap_factor)
+    gap_indices = np.where(gap_mask)[0]  # indices into diff array
+
+    segments = []
+    start = 0
+    for gi in gap_indices:
+        # segment runs from start up to and including index gi
+        segments.append(slice(start, gi + 1))
+        start = gi + 1
+    # final segment
+    segments.append(slice(start, len(datetimes)))
+
+    return segments, typical_dt
+
+
 def plot_timeseries_1d(ax,
                        datetimes,
                        samples,
@@ -58,33 +117,51 @@ def plot_timeseries_1d(ax,
                        log_yscale=False,
                        ymin=None,
                        ymax=None,
+                       gap_factor=1.5,
                        ):
     '''
-    Plot total particle count (Ntot) time series with credible intervals.
+    Plot a 1D time series (median + credible interval band) with automatic gap masking.
 
     Parameters
     ----------
     ax : matplotlib.axes.Axes
-        Axes to plot on.
+    datetimes : array-like of datetime64, shape (n_meas,)
+        Measurement timestamps.
+    samples : array-like, shape (n_samples, n_meas)
+        Posterior samples at each measurement time.
     coverage : float in (0, 100), optional
-        Credible mass percentage for the HDI band. Default is 95.
+        Credible interval width in percent. Default is 95.
+    color : str, optional
+        Color for the line and band.
+    title : str or None, optional
+    log_yscale : bool, optional
+    ymin, ymax : float or None, optional
+        Manual y-axis limits. Default to data range.
+    gap_factor : float, optional
+        Gap threshold as a multiple of the median time step.
     '''
-    
     median, CI_low, CI_high = summarize_samples(samples, coverage=coverage)
     
-    label = 'Credible interval' if not coverage else f'{coverage} % credible interval'
-    ax.fill_between(datetimes,
-                    CI_low,
-                    CI_high,
-                    alpha=0.5,
-                    facecolor=color,
-                    label=label,
-                    )
+    segments, typical_dt = _contiguous_segments(datetimes, gap_factor)
     
-    ax.plot(datetimes, median, color=color, linewidth=0.5,
-            label='Median estimate')
+    label_ci = 'Credible interval' if not coverage else f'{coverage} % credible interval'
+    label_med = 'Median estimate'
     
-    typical_dt = np.median(np.diff(datetimes))
+    for seg in segments:
+        t = datetimes[seg]
+        ax.fill_between(t,
+                        CI_low[seg],
+                        CI_high[seg],
+                        alpha=0.5,
+                        facecolor=color,
+                        label=label_ci,
+                        )
+        ax.plot(t, median[seg], color=color, linewidth=0.5, label=label_med)
+
+        # Only label the first segment to avoid duplicate legend entries
+        label_ci = None
+        label_med = None
+    
     ax.set_xlim(datetimes[0], datetimes[-1] + typical_dt)
     ymax = np.quantile(CI_high, 1) if ymax is None else ymax
     ymin = np.quantile(CI_low, 0) if ymin is None else ymin
@@ -97,43 +174,48 @@ def plot_timeseries_1d(ax,
     ax.set_title(title, loc='left')
 
 
-def plot_timeseries(ax, datetimes, d_m, Z,
+def plot_timeseries_2d(ax, datetimes, d_m, Z,
                     cmap='viridis',
                     log_color_scale=True,
                     vmin_q=None, vmax_q=None,
                     vmin=None, vmax=None,
                     show_cbar=True,
                     cbar_label=None,
+                    cbar_as_perc=False,
+                    gap_factor=1.5,
                     ):
     '''
-    Plot Z(time, size) as pcolormesh with gap masking and optional manual
-    or quantile-based color limits.
-    
+    Plot a 2D time-size field as a pcolormesh with automatic gap masking.
+
     Parameters
     ----------
+    ax : matplotlib.axes.Axes
+    datetimes : array-like of datetime64, shape (n_meas,)
+        Measurement timestamps (columns of Z).
+    d_m : array-like of float, shape (n_bins,)
+        Bin-centre diameters in metres.
+    Z : array-like, shape (n_bins, n_meas)
+        Values to plot (e.g. size distribution).
+    cmap : str, optional
+    log_color_scale : bool, optional
+        Use LogNorm if True, linear Normalize otherwise.
     vmin, vmax : float or None
         Manual color limits. Mutually exclusive with vmin_q / vmax_q.
     vmin_q, vmax_q : float or None
-        Quantile-based limits in [0, 1]. Used if the corresponding
-        vmin / vmax is None. If both are None, default to 0.001 and 0.999.
-    log_color_scale : bool
-        If True (and norm is None), use LogNorm; else linear Normalize.
-    show_cbar : bool
-        Whether to draw a colorbar.
-    cbar_label : str or None
-        Label for the colorbar.
+        Quantile-based color limits in [0, 1]. Defaults: 0.001, 0.999.
+    show_cbar : bool, optional
+    cbar_label : str or None, optional
+    cbar_as_perc : bool, optional
+        Format colorbar tick labels as percentages.
+    gap_factor : float, optional
+        Gap threshold as a multiple of the median time step.
+
+    Returns
+    -------
+    im : matplotlib.collections.QuadMesh
     '''
-    
-    # Compute time diffs in minutes
-    dt = np.diff(datetimes)
-    
-    # Estimate typical measurement length
-    typical_dt = np.median(dt)
-    gap_thresh = 1.5 * typical_dt
-    
-    # Alternatively give it direcetly in minutes
-    # gap_thresh = np.timedelta64(9, 'm')
-    
+    typical_dt, gap_mask = _detect_gaps(datetimes, gap_factor)
+
     # Give the last datapoint a width so it is correctly visualized
     date_edges = np.empty(len(datetimes) + 1, dtype=datetimes.dtype)
     date_edges[:-1] = datetimes
@@ -147,12 +229,12 @@ def plot_timeseries(ax, datetimes, d_m, Z,
     # To nm
     d_m_edges *= 1e9
     
-    # Identify the intervals (between t[i] and t[i+1]) that are too wide
-    gap_intervals = dt > gap_thresh
-    
     # # Create masked array and mask the column whose cell spans the gap interval
     gap_cols = np.zeros(Z.shape[1], dtype=bool)
-    gap_cols[:-1] = gap_intervals  # column i corresponds to [t[i], t[i+1])
+    gap_cols[:-1] = gap_mask  # column i corresponds to [t[i], t[i+1])
+    # Mask gap columns
+    gap_cols = np.zeros(Z.shape[1], dtype=bool)
+    gap_cols[:-1] = gap_mask
     Z_masked = ma.array(Z, copy=True)
     Z_masked[:, gap_cols] = ma.masked
     
@@ -178,9 +260,20 @@ def plot_timeseries(ax, datetimes, d_m, Z,
         _norm = colors.Normalize(vmin=vmin, vmax=vmax)
     
     im = ax.pcolormesh(date_edges, d_m_edges, Z_masked, cmap=cmap, norm=_norm, shading='auto')
+    
     if show_cbar:
         cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
         ax._my_colorbar = cbar  # attach the colorbar for easy reference later
+    
+        ticks = np.array(cbar.get_ticks())
+        ticks = ticks[(ticks >= vmin) & (ticks <= vmax)]
+        ticks = np.unique(np.concatenate(([vmin], ticks, [vmax])))
+        labels = [_fmt_sig(t) for t in ticks]   # plain formatting
+        cbar.set_ticks(ticks)
+        cbar.set_ticklabels(labels)
+        if cbar_as_perc:
+            cbar.ax.yaxis.set_major_formatter(tck.FuncFormatter(lambda x, pos: f"{x*100:.0f} %"))
+    
     ax.set_yscale('log')
     ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
     ax.set_yticks([d_m[0] * 1e9, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
@@ -188,6 +281,20 @@ def plot_timeseries(ax, datetimes, d_m, Z,
     ax.set_xlabel('Time')
     
     return im
+
+
+def _fmt_sig(x):
+    if x < 1:
+        # 1 significant digit
+        # Example: 0.83 -> 0.8 ; 0.043 -> 0.04
+        if x == 0:
+            return "0"
+        p = -int(math.floor(math.log10(abs(x))))  # decimals needed
+        return f"{x:.{p}f}"
+    else:
+        # whole numbers
+        return f"{x:.0f}"
+
 
 
 def plot_system_matrix(ax, MPSS : MobilityParticleSizeSpectrometer, title=None):

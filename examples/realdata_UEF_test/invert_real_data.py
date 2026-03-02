@@ -3,12 +3,12 @@
 from MPSS_UQ.measurement_data import MeasurementDataset
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer, lpm_to_m3s
 from MPSS_UQ.inversion import invert_dataset, smoothness_prior
-from MPSS_UQ.analysis import (summarize_samples, total_concentration, concentration_in_range,
+from MPSS_UQ.analysis import (total_concentration, concentration_in_range,
                               geometric_mean_diameter, mode_diameter, median_diameter,
                               surface_area_concentration, volume_concentration, condensation_sink,
                               effective_diameter, geometric_std)
 from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
-                                   plot_timeseries, plot_timeseries_1d)
+                                   plot_timeseries_1d, plot_timeseries_2d)
 
 import yaml
 import numpy as np
@@ -113,7 +113,7 @@ binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
 
 # Subplot 1: Posterior medians
 Z = medians.T / binwidth
-plot_timeseries(axs[0], psd_posteriors.datetimes, d_m, Z,
+plot_timeseries_2d(axs[0], psd_posteriors.datetimes, d_m, Z,
                 cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
                 )
 axs[0].set_title(r'Posterior median of $\mathbf{N}$')
@@ -123,7 +123,7 @@ axs[0].set_title(r'Posterior median of $\mathbf{N}$')
 eps = 0.0001
 W = ((CI_upper - CI_lower) / (medians + eps)).T
 
-plot_timeseries(axs[1], psd_posteriors.datetimes, d_m, W,
+plot_timeseries_2d(axs[1], psd_posteriors.datetimes, d_m, W,
                 # log_color_scale=False,
                 cbar_label=fr'Relative {CI_coverage} % HDI width',
                 cmap='inferno',
@@ -174,7 +174,7 @@ prior_variance = np.diag(prior['covariance'])
 post_variance = psd_posteriors.variance()
 VR = np.log10(post_variance / prior_variance).T
 
-plot_timeseries(axs[0], psd_posteriors.datetimes, d_m, VR,
+plot_timeseries_2d(axs[0], psd_posteriors.datetimes, d_m, VR,
                 log_color_scale=False,
                 cbar_label=r'$\log_{10}(\sigma_\mathrm{post}^2 / \sigma_\mathrm{prior}^2)$',
                 cmap='Blues_r'
@@ -185,7 +185,7 @@ axs[0].set_title('log variance reduction')
 CI_width = CI_upper - CI_lower
 plotval = CI_width.T / binwidth
 vmin = np.quantile(plotval.flatten(), 0.001)
-plot_timeseries(axs[1], psd_posteriors.datetimes, d_m, plotval,
+plot_timeseries_2d(axs[1], psd_posteriors.datetimes, d_m, plotval,
                 # log_color_scale=False,
                 cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
                 cmap='Blues_r'
