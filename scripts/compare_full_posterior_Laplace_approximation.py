@@ -7,9 +7,8 @@ from scipy.stats import norm
 
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 from MPSS_UQ.inversion import invert_psd
-from MPSS_UQ.inversion_results import highest_density_interval
+from MPSS_UQ.analysis import highest_density_interval
 from MPSS_UQ.measurement_data import generate_DMPS_measurement
-from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram, plot_datafit
 
 
 ''' This script compares the Laplace approximation to the posterior and the true posterior in
@@ -36,7 +35,7 @@ def plot_comparison(ax, DMPS, measurement, result_Laplace, result_MCMC, title, y
                 label='CM estimate (MCMC)'
                 )
     ax.semilogx(DMPS.d_m, 10**result_Laplace.post_mean_log10 / binwidth, 'C1',
-                label='MAP estimate'
+                label='Posterior median (Laplace)'
                 )
     ax.semilogx(measurement.d_m_true, measurement.N_true / binwidth_m, '--k',
                 label='Truth'
@@ -50,8 +49,8 @@ def plot_comparison(ax, DMPS, measurement, result_Laplace, result_MCMC, title, y
                     label='95 % CI (MCMC)'
                     )
     ax.fill_between(DMPS.d_m,
-                    CI_upper_MAP / binwidth,
-                    CI_lower_MAP / binwidth,
+                    Laplace_upper / binwidth,
+                    Laplace_lower / binwidth,
                     alpha=0.25,
                     facecolor='C1',
                     label='95 % CI (Laplace)'
@@ -59,7 +58,7 @@ def plot_comparison(ax, DMPS, measurement, result_Laplace, result_MCMC, title, y
     
     ax.set_xlim([result_MCMC.d_m[0], result_MCMC.d_m[-1]])
     ax.set_ylim(ylims)
-    ax.legend()
+    ax.legend(loc='best')
     ax.set_ylabel(r'dN / d$\log$d$_m$')
     ax.set_xlabel('Diameter (m)')
     ax.set_title('Posterior comparison' + title)
@@ -69,22 +68,17 @@ def plot_comparison(ax, DMPS, measurement, result_Laplace, result_MCMC, title, y
 def plot_histogram_comparison(ax, mcmc_samples, MAP, post_cov, title=None):
     
     # Histogram of MCMC samples
-    ax.hist(mcmc_samples, bins=50, density=True, alpha=0.6, color='skyblue', label='MCMC samples')
+    ax.hist(mcmc_samples, bins=50, density=True, alpha=0.6, color='skyblue',
+            label='Posterior samples')
     
     post_std = np.sqrt(post_cov)
-    # First find x limits that cover all MCMC samples and at least +- 2 * Laplace approximation
-    # standard deviations
-    # x_min = min(min(mcmc_samples), MAP - 2 * post_std)
-    # x_max = max(max(mcmc_samples), MAP + 2 * post_std)
-    # # Make the Laplace approximation plot symmetric around the MAP
-    # abs_max = max(abs(MAP - x_min), abs(MAP - x_max))
-    x_min = MAP - 4 * post_std#abs_max
-    x_max = MAP + 4 * post_std#abs_max
+    x_min = MAP - 4 * post_std
+    x_max = MAP + 4 * post_std
     x = np.linspace(x_min, x_max, 500)
     
     # Laplace approximation
     laplace_pdf = norm.pdf(x, loc=MAP, scale=np.sqrt(post_cov))
-    ax.plot(x, laplace_pdf, '-r', lw=2, label='Laplace approximation')
+    ax.plot(x, laplace_pdf, '-C1', lw=2, label='Laplace approximation')
     
     # Labels and legend
     ax.set_xlabel(r'$\log_{10}(N)$')
@@ -108,8 +102,8 @@ def compare_posterior_representations(ax1, ax2, ax3, ax4):
     pos_ion_mob = 1.35e-4
     neg_ion_mob = 1.60e-4
     
-    scenario_1 = 'Desert'
-    scenario_2 = 'Urban'
+    scenario_1 = 'Marine'
+    scenario_2 = 'Rural'
     
     # Test 1
     measurement = generate_DMPS_measurement(DMPS_prop.copy(),
@@ -126,12 +120,12 @@ def compare_posterior_representations(ax1, ax2, ax3, ax4):
     result_Laplace = invert_psd(DMPS, measurement)
     
     # Sampled posterior
-    result_MCMC = invert_psd(DMPS, measurement, sample_posterior=True, num_samples=500000)
+    result_MCMC = invert_psd(DMPS, measurement, use_mcmc=True, num_samples=500000)
     
     plot_comparison(ax1, DMPS, measurement, result_Laplace, result_MCMC,
                     ', ' + scenario_1 + ' scenario', [0, 300])
     
-    bb = 1  # bin number
+    bb = 4  # bin number
     post_cov = result_Laplace.post_covL_log10 @ result_Laplace.post_covL_log10.T
     plot_histogram_comparison(ax3,
                               np.log10(result_MCMC.post_samples[:, bb]),
@@ -158,7 +152,7 @@ def compare_posterior_representations(ax1, ax2, ax3, ax4):
     result_Laplace = invert_psd(DMPS, measurement)
     
     # Sampled posterior
-    result_MCMC = invert_psd(DMPS, measurement, sample_posterior=True, num_samples=500000)
+    result_MCMC = invert_psd(DMPS, measurement, use_mcmc=True, num_samples=500000)
     
     plot_comparison(ax2, DMPS, measurement, result_Laplace, result_MCMC,
                     ', ' + scenario_2 + ' scenario', [0, 20000])
