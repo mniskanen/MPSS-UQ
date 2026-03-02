@@ -8,7 +8,7 @@ from matplotlib.lines import Line2D
 
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 from MPSS_UQ.inversion import invert_psd, smoothness_prior
-from MPSS_UQ.inversion_results import total_concentration, highest_density_interval, summarize_samples
+from MPSS_UQ.analysis import total_concentration, summarize_samples
 from MPSS_UQ.measurement_data import generate_DMPS_measurement, compute_true_Ntot_in_range
 from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram, plot_datafit
 
@@ -59,6 +59,7 @@ measurement = generate_DMPS_measurement(DMPS_prop.copy(),
                                         scenario='Urban',
                                         pos_ion_mobility=1.40e-4,
                                         neg_ion_mobility=1.90e-4,
+                                        rng_seed=0
                                         )
 
 

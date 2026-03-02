@@ -3,12 +3,10 @@
 from MPSS_UQ.measurement_data import MeasurementDataset
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer, lpm_to_m3s
 from MPSS_UQ.inversion import invert_dataset, smoothness_prior
-from MPSS_UQ.inversion_results import (summarize_samples, total_concentration,
-                                       concentration_in_range, geometric_mean_diameter,
-                                       mode_diameter, median_diameter, surface_area_concentration,
-                                       volume_concentration, condensation_sink, effective_diameter,
-                                       geometric_std,
-                                       )
+from MPSS_UQ.analysis import (summarize_samples, total_concentration, concentration_in_range,
+                              geometric_mean_diameter, mode_diameter, median_diameter,
+                              surface_area_concentration, volume_concentration, condensation_sink,
+                              effective_diameter, geometric_std)
 from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, plot_datafit,
                                    plot_timeseries, plot_timeseries_1d)
 

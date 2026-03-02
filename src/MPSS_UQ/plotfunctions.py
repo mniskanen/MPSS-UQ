@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
 
-from MPSS_UQ.inversion_results import (highest_density_interval, PSDPosterior,
-                                       PSDPosteriorSeries, summarize_samples)
+from MPSS_UQ.analysis import highest_density_interval, summarize_samples
+from MPSS_UQ.inversion import PSDPosterior
+from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 
 
 def plot_psd(ax, d_m, N, *args, **kwargs):
@@ -24,7 +25,7 @@ def plot_psd(ax, d_m, N, *args, **kwargs):
     ax.legend()
 
 
-def plot_posterior_summary(ax, psd_posterior, CI_coverage=95, color='C0'):
+def plot_posterior_summary(ax, psd_posterior : PSDPosterior, CI_coverage=95, color='C0'):
     ''' Plot a simple posterior summary (mean value and credible intervals).
     Input:
         psd_posterior - instance of PSDPosterior
@@ -65,8 +66,6 @@ def plot_timeseries_1d(ax,
     ----------
     ax : matplotlib.axes.Axes
         Axes to plot on.
-    psd_posteriors : PSDPosteriorSeries
-        Inversion results across multiple measurements.
     coverage : float in (0, 100), optional
         Credible mass percentage for the HDI band. Default is 95.
     '''
@@ -191,11 +190,11 @@ def plot_timeseries(ax, datetimes, d_m, Z,
     return im
 
 
-def plot_system_matrix(ax, DMPS, title=None):
-    ''' Plot the system matrix of the DMPS.
+def plot_system_matrix(ax, MPSS : MobilityParticleSizeSpectrometer, title=None):
+    ''' Plot the system matrix of the MPSS.
     Input:
         ax - figure axis
-        DMPS - The DMPS object
+        MPSS - The MobilityParticleSizeSpectrometer instance
         title - additional title for the figure
     '''
     if title is None:
@@ -203,8 +202,8 @@ def plot_system_matrix(ax, DMPS, title=None):
     else:
         title = f', {title}'  # add a comma
     
-    dmx = DMPS.d_m * 1e9          # x centers
-    dmy = DMPS.d_m_data * 1e9
+    dmx = MPSS.d_m * 1e9          # x centers
+    dmy = MPSS.d_m_data * 1e9
     
     # Build log-spaced edges from centers
     def edges_from_centers_log(c):
@@ -222,10 +221,10 @@ def plot_system_matrix(ax, DMPS, title=None):
     ye = edges_from_centers_log(dmy)
     Xedges, Yedges = np.meshgrid(xe, ye)
     
-    im = ax.pcolormesh(Xedges, Yedges, DMPS.system_matrix)
+    im = ax.pcolormesh(Xedges, Yedges, MPSS.system_matrix)
     
     ax.invert_yaxis()
-    ax.set_title(f'DMPS system matrix{title}')
+    ax.set_title(f'MPSS system matrix{title}')
     ax.set_xlabel('Modelled diameter (nm)')
     ax.set_ylabel('Nominal measured diameter (nm)')
     ax.set_xscale('log')
@@ -234,7 +233,12 @@ def plot_system_matrix(ax, DMPS, title=None):
     cbar = ax.figure.colorbar(im, ax=ax, label='Matrix values')
 
 
-def plot_datafit(ax, DMPS, output_measured, psd_posterior : PSDPosterior, CI_coverage=95):
+def plot_datafit(ax,
+                 MPSS : MobilityParticleSizeSpectrometer,
+                 output_measured,  # counts
+                 psd_posterior : PSDPosterior,
+                 CI_coverage=95,
+                 ):
     # Data prediction
     n_samples = 5000
     output_predicted_samples = np.zeros((n_samples, len(output_measured)))
@@ -251,10 +255,10 @@ def plot_datafit(ax, DMPS, output_measured, psd_posterior : PSDPosterior, CI_cov
         n_samples = min(len(psd_posterior.post_samples), 5000)
         
         def _update_ion_props(ion_properties):
-            if DMPS.charging_model_name == 'LYF-interp':
-                DMPS.set_charger_properties(ion_properties[0], ion_properties[1])
-            elif DMPS.charging_model_name == 'LYF-interp-flux':
-                DMPS.set_charger_properties(ion_properties[0], ion_properties[1],
+            if MPSS.charging_model_name == 'LYF-interp':
+                MPSS.set_charger_properties(ion_properties[0], ion_properties[1])
+            elif MPSS.charging_model_name == 'LYF-interp-flux':
+                MPSS.set_charger_properties(ion_properties[0], ion_properties[1],
                                             ion_properties[2])
         
         sample_idxs = rng.choice(len(psd_posterior.post_samples), size=n_samples, replace=False)
@@ -266,19 +270,19 @@ def plot_datafit(ax, DMPS, output_measured, psd_posterior : PSDPosterior, CI_cov
             _update_ion_props(ion_properties)
         
         for i, sample_idx in enumerate(sample_idxs):
-            # Check if ion properties changed, do we need to update DMPS
+            # Check if ion properties changed, do we need to update MPSS
             if hasattr(psd_posterior, 'ion_property_samples'):
                 if np.any(ion_properties != psd_posterior.ion_property_samples[sample_idx]):
                     ion_properties = psd_posterior.ion_property_samples[sample_idx]
                     _update_ion_props(ion_properties)
             
-            output_predicted_samples[i] = DMPS.forward_model(
+            output_predicted_samples[i] = MPSS.forward_model(
                 np.log10(psd_posterior.post_samples[sample_idx])
                 )
     
     elif psd_posterior.input_mode == 'gaussian-log10':
         for i in range(n_samples):
-            output_predicted_samples[i] = DMPS.forward_model(
+            output_predicted_samples[i] = MPSS.forward_model(
                 np.log10(psd_posterior.get_samples(num=1).squeeze())
                 )
     else:
@@ -300,15 +304,15 @@ def plot_datafit(ax, DMPS, output_measured, psd_posterior : PSDPosterior, CI_cov
     # Highest density intervals
     CI_lo, CI_hi = highest_density_interval(output_predicted_samples_noisy.T, CI_coverage / 100)
     
-    ax.semilogx(DMPS.d_m_data * 1e9, output_measured, 'kx', label='Observed counts')
-    ax.fill_between(DMPS.d_m_data * 1e9,
+    ax.semilogx(MPSS.d_m_data * 1e9, output_measured, 'kx', label='Observed counts')
+    ax.fill_between(MPSS.d_m_data * 1e9,
                     CI_hi,
                     CI_lo,
                     alpha=0.25,
                     facecolor='C1',
                     label=f'{CI_coverage} % posterior predictive interval'
                     )
-    ax.semilogx(DMPS.d_m_data * 1e9, output_predicted_median_noiseless, 'C1-',
+    ax.semilogx(MPSS.d_m_data * 1e9, output_predicted_median_noiseless, 'C1-',
                 label='Median predicted signal (noiseless)')
     ax.legend()
     ax.grid('on')
