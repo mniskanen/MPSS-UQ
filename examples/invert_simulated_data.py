@@ -106,6 +106,11 @@ prior = smoothness_prior(DMPS_inv.d_m,
 
 psd_posterior = invert_psd(DMPS_inv, measurement, prior)
 
+# Example: plot the MPSS system matrix
+# from MPSS_UQ.plotfunctions import plot_system_matrix
+# fig, ax = plt.subplots(1,1 , num=100, clear=True)
+# plot_system_matrix(ax, DMPS_inv, title='inversion')
+
 
 
 # =============================================================================
@@ -129,15 +134,15 @@ prior = smoothness_prior(DMPS_marg.d_m,
                          correlation_length,
                          log_standard_deviation
                          )
+
 # Marginalize over charger ion mobilities
-result_marg = invert_psd(DMPS_marg,
 psd_posterior_marg = invert_psd(DMPS_marg,
-                         measurement,
-                         prior,
-                         marginalize_ion_mobility=True,
-                         num_samples=1000000,  # more samples for cleaner plots
-                         marginalization_grid='fine'  # for smoother Ntot plots
-                         )
+                                measurement,
+                                prior,
+                                marginalize_ion_mobility=True,
+                                num_samples=1000000,  # more samples for cleaner plots
+                                marginalization_grid='fine'  # for smoother Ntot plots
+                                )
 
 
 
@@ -150,7 +155,6 @@ CI_coverage = 95
 # To return the estimate mean value and lower and upper limits of the credible intervals, do:
 # mean, CI_lower, CI_upper = psd_posterior.summary(coverage=CI_coverage)
 
-# fig, axs = plt.subplots(2, 2, num=1, clear=True)
 fig = plt.figure(num=1, clear=True)
 gs = gridspec.GridSpec(3, 2, height_ratios=[1, 0.05, 1])  # middle row is a gap for a 
 axs = np.empty((2, 2), dtype=object)
@@ -207,7 +211,7 @@ fig.tight_layout()
 plt.show()
 
 # Plot data fit
-fig, axs = plt.subplots(2, 1, num=999, clear=True)
+fig, axs = plt.subplots(2, 1, num=2, clear=True)
 plot_datafit(axs[0], DMPS_inv, measurement.output, psd_posterior)
 plot_datafit(axs[1], DMPS_marg, measurement.output, psd_posterior_marg)
 axs[0].set_title('Data fit, no marginalization')

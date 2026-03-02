@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import importlib.resources as resources
 
 from MPSS_UQ.chargingmodels import (LYFChargingModel, WiedensohlerChargingModel,
-                                          LYFFluxInterpolator)
+                                    LYFFluxInterpolator)
 
 particle_radius = np.logspace(np.log10(5e-10), np.log10(1.25e-6), num=32)
 
