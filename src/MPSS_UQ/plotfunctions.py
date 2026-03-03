@@ -4,7 +4,6 @@ import math
 import numpy as np
 import numpy.ma as ma
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
 
@@ -171,7 +170,7 @@ def plot_timeseries_1d(ax,
     ax.set_ylim([ymin, ymax])
     ax.grid('on')
     ax.legend()
-    
+    ax.set_xlabel('Time')
     ax.set_title(title, loc='left')
 
 
@@ -285,15 +284,10 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
         im.set_facecolors(rgba.reshape(-1, 4))
     
     if show_cbar:
-        cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
+        cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label, pad=0.02)
         ax._my_colorbar = cbar  # attach the colorbar for easy reference later
-    
-        ticks = np.array(cbar.get_ticks())
-        ticks = ticks[(ticks >= vmin) & (ticks <= vmax)]
-        ticks = np.unique(np.concatenate(([vmin], ticks, [vmax])))
-        labels = [_fmt_sig(t) for t in ticks]   # plain formatting
-        cbar.set_ticks(ticks)
-        cbar.set_ticklabels(labels)
+        
+        _my_format_colorbar(cbar, vmin, vmax)
         if cbar_as_perc:
             cbar.ax.yaxis.set_major_formatter(tck.FuncFormatter(lambda x, pos: f"{x*100:.0f} %"))
     
@@ -304,6 +298,32 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
     ax.set_xlabel('Time')
     
     return im
+
+
+def _my_format_colorbar(cbar, vmin, vmax, min_dist_frac=0.06, log_scale=True):
+    if log_scale:
+        range_span = np.log10(vmax) - np.log10(vmin)
+        def _dist(a, b):
+            return abs(np.log10(a) - np.log10(b))
+    else:
+        range_span = vmax - vmin
+        def _dist(a, b):
+            return abs(a - b)
+
+    min_dist = min_dist_frac * range_span
+
+    # Get default ticks and keep only those within range
+    ticks = np.array(cbar.get_ticks())
+    ticks = ticks[(ticks >= vmin) & (ticks <= vmax)]
+
+    # Remove ticks that are too close to vmin or vmax
+    keep = [t for t in ticks
+            if _dist(t, vmin) > min_dist and _dist(t, vmax) > min_dist]
+
+    ticks = np.unique(np.concatenate(([vmin], keep, [vmax])))
+    labels = [_fmt_sig(t) for t in ticks]
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels(labels)
 
 
 def _fmt_sig(x):
@@ -530,38 +550,44 @@ def add_checkerboard_background(ax, check_size_px=8, light=0.92, dark=0.75, zord
         'light': light,
         'dark': dark,
         'img_artist': None,
+        'base_dpi': ax.get_figure().get_dpi(),  # screen DPI at creation time
     }
-
     def _update_checkerboard(event=None):
         """Regenerate the checkerboard image based on current pixel size of the axes."""
         params = ax_bg._checker_params
-
+        
         # Get the bounding box of the background axes in pixels
         bbox = ax_bg.get_window_extent()
         w_px = max(int(np.ceil(bbox.width)), 1)
         h_px = max(int(np.ceil(bbox.height)), 1)
-
-        s = params['check_size_px']
-
+    
+        # Scale checker size with DPI so squares look the same
+        # physical size on screen and in saved files
+        base_dpi = params['base_dpi']
+        current_dpi = ax.get_figure().get_dpi()
+        s = max(1, int(round(params['check_size_px'] * current_dpi / base_dpi)))
+    
+        if (w_px, h_px, s) == params.get('_last', (None, None, None)):
+            return
+        params['_last'] = (w_px, h_px, s)
+        
         # Number of checker cells needed
-        n_cols = int(np.ceil(w_px / s))
-        n_rows = int(np.ceil(h_px / s))
-
+        n_cols = max(int(np.ceil(w_px / s)), 1)
+        n_rows = max(int(np.ceil(h_px / s)), 1)
+        
         # Build checkerboard at cell resolution
         j = np.arange(n_cols)[None, :]
         i = np.arange(n_rows)[:, None]
         checker = ((i + j) % 2).astype(np.float64)
-
+        
         # Map to grey levels: 0 -> light, 1 -> dark
         checker_grey = np.where(checker == 0, params['light'], params['dark'])
-
         # Stack to RGB
         checker_rgb = np.stack([checker_grey] * 3, axis=-1)
-
+    
         if params['img_artist'] is None:
             params['img_artist'] = ax_bg.imshow(
-                checker_rgb,
-                origin='lower',
+                checker_rgb, origin='lower',
                 aspect='auto',
                 interpolation='nearest',
                 extent=[0, 1, 0, 1],  # fill the axes in axes coordinates
