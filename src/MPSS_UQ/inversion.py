@@ -131,55 +131,57 @@ class PSDPosterior:
         report as the point estimate!). If 10^c is the posterior mode, then the lower HDI limit
         is 10^c / r and the upper limit is 10^c * r, where r = 10^\delta. We find \delta by
         solving a scalar equation, corresponding to finding the root of the function
-        'mass_equation' below.
+        'mass_equation' below. The root-finding is vectorized over all components via bisection.
         """
-        
+		
         # Point estimate in N: posterior median
-        post_median = 10**(self.post_mean_log10[self.sl])
+        post_median = 10.0 ** self.post_mean_log10[self.sl]
         
-        #   CI is the desired mass in percent, e.g. 95 -> alpha = 0.95
         alpha = CI / 100.0
         
-        # Marginal stds in x-space (log10): s_i
-        s = np.sqrt(np.sum(self.post_covL_log10[self.sl, :]**2, axis=1))
+        # Marginal stds in log10-space
+        s = np.sqrt(self.variance())
         mu10 = self.post_mean_log10[self.sl]
         ln10 = np.log(10.0)
         c = mu10 - ln10 * s**2  # 10^c is the mode for N
-    
-        CI_lower = np.zeros_like(mu10)
-        CI_upper = np.zeros_like(mu10)
-
-        def mass_equation(delta, si):
-            # f(delta) = P(c-delta <= x <= c+delta) - alpha
-            # where x ~ Normal(mu10, si^2)
-            a1 = (delta - ln10 * si**2) / si
-            a2 = (-delta - ln10 * si**2) / si
-            return norm.cdf(a1) - norm.cdf(a2) - alpha
-    
-        for i, si in enumerate(s):
-            # brentq needs a bracket [lo, hi] where f(lo) <= 0 and f(hi) >= 0.
-            # At delta = 0, mass is 0, so mass_equation(0) = -alpha < 0.
-            lo = 0.0
-            
-            # Pick a conservative upper bound for delta (in decades).
-            # If too small, we expand it until the bracket is valid.
-            hi = max(1.0, 10.0 * si)
-    
-            # Ensure f(hi) >= 0 so the root is bracketed.
-            while mass_equation(hi, si) < 0:
-                hi *= 2.0
-            
-            # Solve for delta such that the interval contains exactly alpha mass.
-            delta = brentq(mass_equation, lo, hi, args=(si,))
-            
-            # Form the HDI endpoints in x-space
-            xL = c[i] - delta
-            xU = c[i] + delta
-            
-            # Map to N-space
-            CI_lower[i] = 10.0**xL
-            CI_upper[i] = 10.0**xU
         
+        # --- Vectorized root-finding via bisection on delta (array) ---
+        # mass_equation(delta, s) = Phi(a1) - Phi(a2) - alpha
+        #   a1 = (delta - ln10*s^2) / s
+        #   a2 = (-delta - ln10*s^2) / s
+        
+        # Initial bracket: lo = 0 everywhere, hi = max(1, 10*s)
+        lo = np.zeros_like(s)
+        hi = np.maximum(1.0, 10.0 * s)
+        
+        def mass_equation(delta):
+            a1 = (delta - ln10 * s**2) / s
+            a2 = (-delta - ln10 * s**2) / s
+            return norm.cdf(a1) - norm.cdf(a2) - alpha
+        
+        # Widen hi where bracket is invalid (vectorized doubling)
+        f_hi = mass_equation(hi)
+        for _ in range(20):
+            mask = f_hi < 0.0
+            if not np.any(mask):
+                break
+            hi[mask] *= 2.0
+            f_hi[mask] = mass_equation(hi)[mask]
+        
+        # Bisection: 60 iterations give ~18 digits of precision (2^-60 ≈ 1e-18)
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            f_mid = mass_equation(mid)
+            neg = f_mid < 0.0
+            lo = np.where(neg, mid, lo)
+            hi = np.where(neg, hi, mid)
+    
+        delta = 0.5 * (lo + hi)
+    
+        # Map to N-space
+        CI_lower = 10.0**(c - delta)
+        CI_upper = 10.0**(c + delta)
+    
         return post_median, CI_lower, CI_upper
     
     
