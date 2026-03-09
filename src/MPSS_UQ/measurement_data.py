@@ -286,12 +286,17 @@ def generate_DMPS_measurement(DMPS_prop,
     # Generate a DMA observation
     DMPS_output_noiseless = DMPS.forward_model(np.log10(N_true))
     
-    # Add noise
+    # Add Poisson counting noise
     rng = np.random.default_rng(seed=rng_seed)
     DMPS_output = rng.poisson(lam=DMPS_output_noiseless).astype(np.float64)
-    noise_std = 2 + 0.01 * DMPS_output_noiseless
-    DMPS_output += noise_std * rng.normal(loc=0.0, scale=1.0,
-                                          size=DMPS_output.shape)
+    
+    # Add concentration-dependent noise
+    alpha = 0.01
+    DMPS_output += alpha * DMPS_output_noiseless * rng.normal(size=DMPS_output.shape)
+    
+    # Add background noise
+    beta = 2.0
+    DMPS_output += beta * rng.normal(size=DMPS_output.shape)
     
     # Restrict the simulated noisy output to nonnegative values
     DMPS_output = np.clip(DMPS_output, 0, None)
