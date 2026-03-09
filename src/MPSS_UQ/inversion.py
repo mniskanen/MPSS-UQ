@@ -199,7 +199,7 @@ class PSDPosterior:
         """ Return the posterior variance.
         """
         if self.input_mode == 'gaussian-log10':
-            return np.diag(self.post_covL_log10[self.sl, self.sl])**2
+            return np.sum(self.post_covL_log10[self.sl, :]**2, axis=1)
         elif self.input_mode == 'samples':
             return np.var(np.log10(self.post_samples[:, self.sl]), axis=0)
     
@@ -286,11 +286,16 @@ class PSDPosterior:
         elif self.input_mode == 'gaussian-log10':
             if num is None:
                 num = 5000
-             # Do 10^samples, but using np.exp (faster)
-            return np.exp((self.post_mean_log10[self.sl, None]
-                        + self.post_covL_log10[self.sl, self.sl]
-                        @ self.rng.normal(loc=0.0, scale=1.0, size=(len(self.d_m), num))
-                        ) * np.log(10)).T
+            
+            # Extract the rows of L corresponding to the reporting range.
+            L_sub = self.post_covL_log10[self.sl, :]
+            z = self.rng.normal(size=(L_sub.shape[1], num))
+            
+            # Compute samples in log10 space
+            log10_samples = self.post_mean_log10[self.sl, None] + L_sub @ z
+            
+            # Convert to linear space using np.exp (faster)
+            return np.exp(log10_samples * np.log(10)).T
 
 
 class PSDPosteriorSeries:
