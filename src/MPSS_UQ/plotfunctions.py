@@ -179,6 +179,8 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
                     log_color_scale=True,
                     vmin_q=None, vmax_q=None,
                     vmin=None, vmax=None,
+                    discrete_bounds=None,
+                    cbar_extend="neither",
                     show_cbar=True,
                     cbar_label=None,
                     cbar_as_perc=False,
@@ -259,7 +261,27 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
             vmax_q = 0.999
         vmax = np.nanquantile(data_for_limits, vmax_q)
     
-    if log_color_scale:
+    if discrete_bounds is not None:
+        # Discrete / binned colormap
+        discrete_bounds = np.asarray(discrete_bounds)
+        n_bins_color = len(discrete_bounds) - 1
+    
+        # Get the base colormap object
+        if isinstance(cmap, str):
+            cmap_base = mpl.colormaps[cmap]
+        else:
+            cmap_base = cmap
+    
+        # Resample to exactly the number of discrete bins
+        cmap = cmap_base.resampled(n_bins_color)
+    
+        _norm = colors.BoundaryNorm(discrete_bounds, ncolors=n_bins_color)
+    
+        # Override vmin/vmax so downstream code stays consistent
+        vmin = discrete_bounds[0]
+        vmax = discrete_bounds[-1]
+    
+    elif log_color_scale:
         _norm = colors.LogNorm(vmin=vmin, vmax=vmax)
     else:
         _norm = colors.Normalize(vmin=vmin, vmax=vmax)
@@ -284,12 +306,28 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
         im.set_facecolors(rgba.reshape(-1, 4))
     
     if show_cbar:
-        cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label, pad=0.02)
-        ax._my_colorbar = cbar  # attach the colorbar for easy reference later
-        
-        _my_format_colorbar(cbar, vmin, vmax)
-        if cbar_as_perc:
-            cbar.ax.yaxis.set_major_formatter(tck.FuncFormatter(lambda x, pos: f"{x*100:.0f} %"))
+        cbar = ax.figure.colorbar(im,
+                                  ax=ax,
+                                  label=cbar_label,
+                                  pad=0.02,
+                                  extend=cbar_extend,
+                                  )
+        ax._my_colorbar = cbar # attach the colorbar for easy reference later
+    
+        if discrete_bounds is not None:
+            # Place ticks at the bin edges
+            cbar.set_ticks(discrete_bounds)
+            if cbar_as_perc:
+                cbar.set_ticklabels([f"{v*100:.0f} %" for v in discrete_bounds])
+        else:
+            if log_color_scale:
+                _my_format_colorbar(cbar, vmin, vmax, log_scale=log_color_scale, sig_digits=0)
+            else:
+                _my_format_colorbar(cbar, vmin, vmax, log_scale=log_color_scale, sig_digits=1)
+            if cbar_as_perc:
+                cbar.ax.yaxis.set_major_formatter(
+                    tck.FuncFormatter(lambda x, pos: f"{x*100:.0f} %")
+                )
     
     ax.set_yscale('log')
     ax.yaxis.set_major_formatter(tck.FormatStrFormatter('%.0f'))
@@ -300,7 +338,7 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
     return im
 
 
-def _my_format_colorbar(cbar, vmin, vmax, min_dist_frac=0.06, log_scale=True):
+def _my_format_colorbar(cbar, vmin, vmax, min_dist_frac=0.06, log_scale=True, sig_digits=0):
     if log_scale:
         range_span = np.log10(vmax) - np.log10(vmin)
         def _dist(a, b):
@@ -321,23 +359,20 @@ def _my_format_colorbar(cbar, vmin, vmax, min_dist_frac=0.06, log_scale=True):
             if _dist(t, vmin) > min_dist and _dist(t, vmax) > min_dist]
 
     ticks = np.unique(np.concatenate(([vmin], keep, [vmax])))
-    labels = [_fmt_sig(t) for t in ticks]
+    labels = [_fmt_sig(t, sig_digits) for t in ticks]
     cbar.set_ticks(ticks)
     cbar.set_ticklabels(labels)
 
 
-def _fmt_sig(x):
+def _fmt_sig(x, sig_digits=0):
+    # Format to number of significant digits
     if x < 1:
-        # 1 significant digit
-        # Example: 0.83 -> 0.8 ; 0.043 -> 0.04
         if x == 0:
             return "0"
-        p = -int(math.floor(math.log10(abs(x))))  # decimals needed
+        p = -int(math.floor(math.log10(abs(x)))) + sig_digits # decimals needed
         return f"{x:.{p}f}"
     else:
-        # whole numbers
-        return f"{x:.0f}"
-
+        return f"{x:.{sig_digits}f}"
 
 
 def plot_system_matrix(ax, MPSS : MobilityParticleSizeSpectrometer, title=None):
@@ -478,7 +513,7 @@ def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None, color='C0'):
     Ntot_low95, Ntot_high95 = highest_density_interval(Ntots, 0.95)
     
     if xlimits is None:
-        plt_lo, plt_hi = highest_density_interval(Ntots, 0.997)
+        plt_lo, plt_hi = highest_density_interval(Ntots, 0.99)
     else:
         plt_lo, plt_hi = xlimits
     
