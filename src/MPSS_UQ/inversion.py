@@ -409,9 +409,10 @@ class PSDPosteriorSeries:
         -------
         result : ndarray, shape (n_measurements, n_samples, ...)
         """
+        desc = f'Propagating posterior samples to {getattr(func, "__name__", repr(func))}'
         return np.array([
             posterior.propagate_to(func, *args, num=num, **kwargs).squeeze(axis=0)
-            for posterior in self._posteriors
+            for posterior in tqdm(self._posteriors, desc=desc)
             ])
     
     
@@ -590,7 +591,7 @@ def invert_dataset(
     marginalization_grid: Literal['standard', 'fine'] = 'standard',
     use_mcmc: bool = False,
     num_samples: int | None = None,
-    parallel: bool = True,
+    parallel: bool = False,
     backend: Literal['loky', 'multiprocessing', 'threading'] = 'loky',
     n_jobs: int | None = None,
     sort_for_cache: bool = True,
