@@ -4,7 +4,6 @@ import numpy as np
 
 from scipy.linalg import toeplitz
 from scipy.stats import norm
-from scipy.optimize import brentq
 from typing import Literal, Tuple
 import psutil
 from joblib import Parallel, delayed
@@ -67,6 +66,7 @@ class PSDPosterior:
                  post_samples=None,
                  ion_property_samples=None,
                  reporting_range='measured',
+                 prior=None,
                  ):
         
         # Particle size vector
@@ -102,6 +102,8 @@ class PSDPosterior:
         self.sl_measured = sl_measured
         
         self.set_reporting_range(reporting_range)
+        
+        self.prior = prior
         
         # Set up rng
         self.rng = np.random.default_rng()
@@ -204,6 +206,23 @@ class PSDPosterior:
             return np.var(np.log10(self.post_samples[:, self.sl]), axis=0)
     
     
+    def prior_to_posterior_ratio(self):
+        """ Prior-to-posterior standard deviation ratio in log10(n) space.
+        
+        Returns values in [0, 1] where 0 = perfectly constrained
+        and 1 = no information gained.
+        """
+        sigma_post = np.sqrt(self.variance())
+        
+        if self.prior is not None:
+            # Assume here that the prior is the same for all bins
+            sigma_prior = np.sqrt(self.prior['covariance'][0, 0])
+        else:
+            raise ValueError('No prior specified for this posterior.')
+        
+        return sigma_prior / sigma_post
+    
+    
     def summary(self, coverage=95):
         """
         Returns the posterior median and shortest credible intervals.
@@ -247,7 +266,6 @@ class PSDPosterior:
         """
         samples = self.get_samples(num=num)
         return func(samples, *args, **kwargs)[np.newaxis, ...]
-
     
     
     def get_samples(self, num=None):
@@ -285,7 +303,7 @@ class PSDPosterior:
         
         elif self.input_mode == 'gaussian-log10':
             if num is None:
-                num = 5000
+                num = 500
             
             # Extract the rows of L corresponding to the reporting range.
             L_sub = self.post_covL_log10[self.sl, :]
@@ -307,6 +325,7 @@ class PSDPosteriorSeries:
     def __init__(self, datetimes):
         self.datetimes = datetimes
         self._posteriors = [None] * len(datetimes)
+        self.prior = None  # The same prior used for all measurements
     
     
     def assign_posterior(self, idx, posterior: PSDPosterior):
@@ -325,6 +344,19 @@ class PSDPosteriorSeries:
             variances[i] = self._posteriors[i].variance()
         
         return variances
+    
+    
+    def prior_to_posterior_ratio(self):
+        """ Returns arrays of the prior-to-posterior standard deviation ratios for all posteriors.
+        """
+        num_posteriors = len(self._posteriors)
+        num_d_m = self._posteriors[0].d_m.shape[0]
+        ratios = np.zeros((num_posteriors, num_d_m))
+        
+        for i in range(num_posteriors):
+            ratios[i] = self._posteriors[i].prior_to_posterior_ratio()
+        
+        return ratios
     
     
     def summary(self, *args, n_jobs=-1, **kwargs):
@@ -502,7 +534,7 @@ def invert_psd(
     sl_measured = slice(i_start, i_stop)
     
     if prior is None:
-        prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
+        prior = smoothness_prior(sizer.d_m)
     
     if marginalize_ion_mobility is True or marginalize_ion_ratio is True:
         if use_mcmc is True:
@@ -520,27 +552,32 @@ def invert_psd(
             num_samples=num_samples,
             )
         return PSDPosterior(sizer.d_m,
-                               sl_measured,
-                               post_samples=posterior_samples,
-                               ion_property_samples=ion_property_samples,
-                               )
+                            sl_measured,
+                            post_samples=posterior_samples,
+                            ion_property_samples=ion_property_samples,
+                            prior=prior,
+                            )
     else:
         if use_mcmc:
             if num_samples is None:
                 num_samples = 100000
                 
             posterior_samples = run_mcmc(sizer, prior, measurement, num_samples=num_samples)
-            return PSDPosterior(sizer.d_m, sl_measured, post_samples=posterior_samples)
+            return PSDPosterior(sizer.d_m,
+                                sl_measured,
+                                post_samples=posterior_samples,
+                                prior=prior,
+                                )
         
         else:
             # Laplace approximation
             MAP, post_cov_L = Laplace_approximation(sizer, prior, measurement)
             return PSDPosterior(sizer.d_m,
-                                   sl_measured,
-                                   post_mean_log10=MAP,
-                                   post_covL_log10=post_cov_L,
-                                   )
-
+                                sl_measured,
+                                post_mean_log10=MAP,
+                                post_covL_log10=post_cov_L,
+                                prior=prior,
+                                )
 
 
 def invert_dataset(
@@ -571,7 +608,7 @@ def invert_dataset(
     dataset : MeasurementDataset | Sequence
         Iterable of measurements; must support __len__ and __getitem__ (0..n-1).
     prior : dict | None
-        PSD prior. If None, uses smoothness_prior(sizer.d_m, 0, 0.5, 1.5).
+        PSD prior. If None, uses the default smoothness_prior.
     marginalize_ion_mobility, marginalize_ion_ratio, marginalization_grid,
     use_mcmc, num_samples
         Passed through to invert_psd(...).
@@ -595,7 +632,8 @@ def invert_dataset(
     """
     
     if prior is None:
-        prior = smoothness_prior(sizer.d_m, 0, 0.5, 1.5)
+        prior = smoothness_prior(sizer.d_m)
+    
     # Build output container using input datetimes if available
     try:
         inv_dataset = PSDPosteriorSeries(dataset.datetimes)
@@ -603,7 +641,10 @@ def invert_dataset(
         inv_dataset = PSDPosteriorSeries(
             [getattr(dataset[i], "datetime", None) for i in range(len(dataset))]
             )
-
+    
+    # Store the prior for later access when analyzing results
+    inv_dataset.prior = prior
+    
     # Collect and optionally sort tasks
     measurements = [dataset[i] for i in range(len(dataset))]
     if sort_for_cache:
@@ -645,7 +686,7 @@ def invert_dataset(
         
         # Important: the 'loky' backend makes copies (via pickling) of the objects each worker
         # needs, so each process receives its own copy of, for example, the DMPS and therefore
-        # it is safe to mutate the DMPS inside 'run_inversion'. With a different backend this
+        # it is safe to mutate the MPSS inside 'invert_psd'. With a different backend this
         # may not be the case.
         # TODO: could do this in batches to help memory usage with huge datasets
         psd_posteriors = Parallel(n_jobs=n_jobs, backend=backend)(
@@ -673,7 +714,6 @@ def invert_dataset(
     return inv_dataset
 
 
-
 def log_post(vals, sizer, L_noise, prior, y_meas):
     ''' Compute the logarithm of the (non-normalized) posterior. '''
     
@@ -681,13 +721,17 @@ def log_post(vals, sizer, L_noise, prior, y_meas):
         - 0.5 * np.linalg.norm(prior['L'] @ (vals - prior['mean']))**2
 
 
-def smoothness_prior(d_m, mean, correlation_length, standard_deviation):
-    ''' Specify a Gaussian smoothness prior with a correlation length. '''
-    
+def smoothness_prior(d_m, mean=0.0, standard_deviation=1.5, correlation_length=0.5):
+    ''' Specify a Gaussian squared exponential smoothness prior with a correlation length.
+    The input mean value is for the log10 of the concentration density dN/dlogdp (for
+    discretization invariance), and it is converted to x internally. '''
     n_bins = d_m.shape[0]
     
+    binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
+    
     prior = {}
-    prior['mean'] = mean
+    # Add the log10(binwidth) to convert from log10(dN/dlogdp) to log10(N)
+    prior['mean'] = mean + np.log10(binwidth)
     
     # Correlation length == 1 corresponds to here to one order of magnitude
     # standard_deviation == standard deviation of the size distribution values
@@ -704,7 +748,7 @@ def smoothness_prior(d_m, mean, correlation_length, standard_deviation):
     prior['covariance'] = a * np.exp(-0.5 * distance_matrix / b**2)
     
     # Add something small to the diagonal to make the matrix better invertible
-    prior['covariance'] += 1e-6 * prior['covariance'][0, 0] * np.eye(n_bins)
+    prior['covariance'] += 1e-12 * prior['covariance'][0, 0] * np.eye(n_bins)
     
     # Direct inverse
     # prior['inv_covariance'] = np.linalg.inv(prior['covariance'])
@@ -923,9 +967,9 @@ def Laplace_approximation_marginalize(sizer : MobilityParticleSizeSpectrometer,
                         )
                     psd_posteriors.append(
                         PSDPosterior(sizer.d_m,
-                                        post_mean_log10=MAP_estimate_log10,
-                                        post_covL_log10=posterior_cov_L_log10,
-                                        )
+                                     post_mean_log10=MAP_estimate_log10,
+                                     post_covL_log10=posterior_cov_L_log10,
+                                     )
                         )
                     
                     # Calculate the (relative) weight of the current mixture component
