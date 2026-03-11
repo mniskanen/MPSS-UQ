@@ -3,6 +3,7 @@
 import numpy as np
 import warnings
 
+from scipy.special import erf
 from typing import Union, Sequence
 
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
@@ -46,7 +47,7 @@ class Measurement:
             self.noise_cov += (0.01 * np.clip(self.output, 0, np.inf))**2
             
             # Background noise
-            self.noise_cov += 2**2
+            self.noise_cov += 0.1
             
             self.inv_noise_cov = 1 / self.noise_cov
             
@@ -197,7 +198,8 @@ def generate_DMPS_measurement(DMPS_prop,
         neg_ion_mobility : mobility of the negative ions for generating data
         rng_seed : set the seed for the rng for reproducible results
     Predefined PSD scenarios are:
-        Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert.
+        Urban, Marine, Rural, Scaled down rural, Remote continental, Free troposphere,
+        Polar, Desert, Trimodal nucleation event, Asymmetric, Irregular
     '''
     
     # Mobility diameters that are used to represent the true PSD
@@ -225,9 +227,10 @@ def generate_DMPS_measurement(DMPS_prop,
     # from MPSS_UQ.plotfunctions import plot_system_matrix
     # plot_system_matrix(DMPS, title='data generation', num=10)
     
-    # Generate a synthetic particle size distribution (based on Seinfeld & Pandis Table 8.3)
-    # Define parameters for each scenario, these define a sum of three lognormal modes
-    scenario_params = {
+    # Generate a synthetic particle size distribution as a sum of lognormal modes
+   
+    # These are based on Seinfeld & Pandis Table 8.3
+    scenario_params_seinfeld = {
         'Urban': [(7100, 11.7e-9, 0.232),
                   (6320, 37.3e-9, 0.250),
                   (960, 151e-9, 0.204)],
@@ -257,12 +260,28 @@ def generate_DMPS_measurement(DMPS_prop,
                    (0.178, 21600e-9, 0.438)],
         }
     
+    # Some other modal distributions
+    scenario_params_other = {
+        'Close bimodal': [(3000, 100.0e-9, 0.150),
+                          (2500, 200.0e-9, 0.150)],
+        
+        'Trimodal nucleation event': [(6000, 12.0e-9, 0.114),
+                                      (2500, 45e-9, 0.176),
+                                      (1500, 150.0e-9, 0.230)],
+        
+        'Scaled down rural': [(6650 / 10, 15e-9, 0.225),
+                              (147 / 10, 54e-9, 0.557),
+                              (1990 / 10, 84e-9, 0.266)],
+        }
+    
+    scenario_params = scenario_params_seinfeld | scenario_params_other
+    
     
     # Input the parameters into lognormal_distribution()
     if scenario in scenario_params:
         dN_dlogdp_true = sum(lognormal_distribution(DMPS.d_m, N, median, log_std)
-                             for N, median, log_std in scenario_params[scenario]
-                             )
+                             for N, median, log_std in scenario_params[scenario])
+    
     elif scenario == 'test':
         dN_dlogdp_true = 1000 * np.ones_like(DMPS.d_m)
     
@@ -272,9 +291,18 @@ def generate_DMPS_measurement(DMPS_prop,
     elif scenario == 'test3':
         dN_dlogdp_true = 5000 * np.ones_like(DMPS.d_m)
         dN_dlogdp_true[int(len(DMPS.d_m) / 2):] = 1e-5
-        
+    
+    elif scenario == 'Asymmetric':
+        dN_dlogdp_true = (
+            asymmetric_mode(d_m, N=2500, median=140e-9, log_std=0.18, skewness=-5)
+            + lognormal_distribution(d_m, N=1500, median=40e-9, log_std=0.18)
+            )
+    
+    elif scenario == 'Irregular':
+        dN_dlogdp_true = irregular_distribution(d_m, phi=0.99, innovation_std=0.10, seed=2)
+    
     else:
-        valid_scenarios = ', '.join(scenario_params.keys())
+        valid_scenarios = ', '.join(scenario_params.keys()) + ', Asymmetric, Irregular'
         raise ValueError('Undefined PSD scenario. Use one of the following: ' +
                          f'{valid_scenarios}')
     
@@ -285,21 +313,18 @@ def generate_DMPS_measurement(DMPS_prop,
     
     # Generate a DMA observation
     DMPS_output_noiseless = DMPS.forward_model(np.log10(N_true))
-    
-    # Add Poisson counting noise
     rng = np.random.default_rng(seed=rng_seed)
-    DMPS_output = rng.poisson(lam=DMPS_output_noiseless).astype(np.float64)
     
     # Add concentration-dependent noise
     alpha = 0.01
-    DMPS_output += alpha * DMPS_output_noiseless * rng.normal(size=DMPS_output.shape)
+    DMPS_output = DMPS_output_noiseless * (1 + alpha * rng.normal(size=DMPS_output_noiseless.shape))
     
-    # Add background noise
-    beta = 2.0
-    DMPS_output += beta * rng.normal(size=DMPS_output.shape)
+    # Add a constant background rate and clip to non-negative
+    beta = np.sqrt(0.1)
+    DMPS_output = np.clip(DMPS_output + beta**2, 0, None)
     
-    # Restrict the simulated noisy output to nonnegative values
-    DMPS_output = np.clip(DMPS_output, 0, None)
+    # Simulate Poisson counting
+    DMPS_output = rng.poisson(lam=DMPS_output).astype(np.float64)
     
     # Create a Measurement object
     measurement = Measurement(None,
@@ -324,6 +349,41 @@ def lognormal_distribution(d_m, N, median, log_std):
     return N / (np.sqrt(2 * np.pi) * log_std) * np.exp(
         - 0.5 * (np.log10(d_m) - np.log10(median))**2 / (log_std)**2
         )
+
+
+def asymmetric_mode(d_m, N, median, log_std, skewness):
+    """
+    Skew-normal in log10 space. Positive skewness extends the right tail,
+    negative skewness extends the left tail.
+    """
+    x = (np.log10(d_m) - np.log10(median)) / log_std
+    pdf = np.exp(-0.5 * x**2) / (np.sqrt(2 * np.pi) * log_std)
+    cdf = 0.5 * (1 + erf(skewness * x / np.sqrt(2)))
+    return N * 2 * pdf * cdf
+
+
+def irregular_distribution(d_m, phi=0.95, innovation_std=0.10, seed=0):
+    """
+    Irregular size distribution from an AR(1) process in log10(n) space,
+    shaped by a broad envelope.
+    """
+    rng = np.random.default_rng(seed)
+    x = np.log10(d_m)
+    M = len(x)
+    
+    # AR(1) process
+    ar = np.zeros(M)
+    ar[0] = rng.normal(0, innovation_std)
+    for i in range(1, M):
+        ar[i] = phi * ar[i - 1] + rng.normal(0, innovation_std)
+    
+    envelope = np.log10(
+        asymmetric_mode(d_m, N=2500, median=140e-9, log_std=0.28, skewness=-5)
+        + lognormal_distribution(d_m, N=2500, median=30e-9, log_std=1.2)
+        )
+    log_n = envelope + ar
+    
+    return 10**log_n
 
 
 def compute_true_Ntot_in_range(measurement, d_m_inv):
