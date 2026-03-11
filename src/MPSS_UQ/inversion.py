@@ -282,7 +282,7 @@ class PSDPosterior:
         num : int or None
             Number of samples.  For 'samples' mode, None returns all
             stored samples.  For 'gaussian-log10' mode, None defaults
-            to 5000.
+            to 500.
     
         Returns
         -------
@@ -303,6 +303,9 @@ class PSDPosterior:
         
         elif self.input_mode == 'gaussian-log10':
             if num is None:
+                # This is less than the default 5000 elsewhere, but for a single lognormal mode
+                # it should be enough (also faster this way, drawing samples here is slower
+                # than just using the stored samples with input_mode=='samples)
                 num = 500
             
             # Extract the rows of L corresponding to the reporting range.

@@ -425,9 +425,8 @@ def plot_datafit(ax,
                  CI_coverage=95,
                  ):
     # Data prediction
-    n_samples = 5000
-    output_predicted_samples = np.zeros((n_samples, len(output_measured)))
     
+    n_samples = 5000
     rng = np.random.default_rng()
     
     # The forward model can only be run for the full length PSD
@@ -438,6 +437,7 @@ def plot_datafit(ax,
     if psd_posterior.input_mode == 'samples':
         # Limit the max number of samples to the max number available
         n_samples = min(len(psd_posterior.post_samples), 5000)
+        output_predicted_samples = np.zeros((n_samples, len(output_measured)))
         
         def _update_ion_props(ion_properties):
             if MPSS.charging_model_name == 'LYF-interp':
@@ -466,6 +466,7 @@ def plot_datafit(ax,
                 )
     
     elif psd_posterior.input_mode == 'gaussian-log10':
+        output_predicted_samples = np.zeros((n_samples, len(output_measured)))
         for i in range(n_samples):
             output_predicted_samples[i] = MPSS.forward_model(
                 np.log10(psd_posterior.get_samples(num=1).squeeze())

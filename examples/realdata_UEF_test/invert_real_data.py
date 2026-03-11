@@ -2,7 +2,7 @@
 
 from MPSS_UQ.measurement_data import MeasurementDataset
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer, lpm_to_m3s
-from MPSS_UQ.inversion import invert_dataset, smoothness_prior
+from MPSS_UQ.inversion import invert_dataset
 from MPSS_UQ.analysis import (total_concentration, concentration_in_range,
                               geometric_mean_diameter, mode_diameter, median_diameter,
                               surface_area_concentration, volume_concentration, condensation_sink,
@@ -35,9 +35,6 @@ DMPS_prop = DMPS_prop['UEF-A20']
 # =============================================================================
 
 raw_data = pd.read_csv('UEF_DMPS_lvl0.txt.gz', sep='\t')
-
-# # select only some measurements
-# raw_data = raw_data.iloc[3000:3500]
 
 concentrations = raw_data.filter(like="conc_").to_numpy()
 d_m_data = raw_data.filter(like="dmed_").iloc[0].to_numpy()
@@ -79,8 +76,8 @@ DMPS.set_charger_properties(1.35e-4, 1.60e-4)
 
 psd_posteriors = invert_dataset(DMPS,
                              # dataset,
-                             dataset.between_times("2024-12-09", "2024-12-12"),
-                             # dataset.between_times("2024-12-01T00:00:00", "2024-12-03T12:00:00"),
+                             dataset.between_times("2024-12-10T12", "2024-12-12T12"),
+                             # dataset.between_times("2024-12-08T00:00:00", "2024-12-12T00:00:00"),
                              marginalize_ion_mobility=True,
                              parallel=True,
                              )
@@ -101,13 +98,12 @@ CI_coverage = 95
 # psd_posteriors.set_reporting_range('full')
 # psd_posteriors.set_reporting_range('measured')  # This is set by default
 
+# Compute summary statistics
+medians, CI_lower, CI_upper = psd_posteriors.summary(coverage=CI_coverage, n_jobs=1)
 
 
 # Figure 1: Estimates and uncertainties ---------------------------------------
-fig, axs = plt.subplots(nrows=3, ncols=1, num=1, clear=True)
-
-# Compute summary statistics
-medians, CI_lower, CI_upper = psd_posteriors.summary(coverage=CI_coverage)
+fig, axs = plt.subplots(nrows=4, ncols=1, num=1, clear=True)
 
 d_m = psd_posteriors[0].d_m  # d_m of the stored results
 binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
@@ -116,71 +112,55 @@ binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
 Z = medians.T / binwidth
 plot_timeseries_2d(axs[0], psd_posteriors.datetimes, d_m, Z,
                 cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
+                vmin=1,
+                cbar_extend='min',
                 )
 axs[0].set_title(r'Posterior median of $\mathbf{N}$')
 
 # Subplot 2: Uncertainties as relative CI width
 W = relative_hdi_width(medians, CI_lower, CI_upper).T
 plot_timeseries_2d(axs[1], psd_posteriors.datetimes, d_m, W,
-                cbar_label=fr'Relative {CI_coverage} % HDI width',
-                cmap='inferno',
+                cbar_label='Relative width',
+                cmap='inferno_r',
                 cbar_as_perc=True,
+                vmax=10,
+                cbar_extend='max',
                 )
-axs[1].set_title(fr'Uncertainty (relative {CI_coverage} % HDI width)')
+axs[1].set_title(fr'Posterior uncertainty (relative width of {CI_coverage} % credible interval)')
 
+# Subplot 3: Uncertainties posterior uncertainty reduction
+R = psd_posteriors.prior_to_posterior_ratio().T
+plot_timeseries_2d(axs[2], psd_posteriors.datetimes, d_m, R,
+                cbar_label=r'$\sigma_\mathrm{prior} / \sigma_\mathrm{post}$',
+                cmap='inferno',
+                # cbar_as_perc=True,
+                vmin=1
+                )
+axs[2].set_title('Posterior uncertainty reduction')
 
-# Subplot 3: PSD estimate with uncertainty as the alpha channel
-
-# Choose values for W
-W_low = 0.5  # width below which estimate is ''accurate'' (alpha == 1)
-W_high = 5  # width above which estimate is ''inaccurate'' (alpha == 0)
+# Subplot 4: PSD estimate with uncertainty as the alpha channel
+W_low = 1  # relative width below which estimate is ''accurate'' (alpha == 1)
+W_high = 5  # relative width above which estimate is ''inaccurate'' (alpha == 0)
 W_clipped = np.clip(W, W_low, W_high)
 alpha = 1 - (W_clipped - W_low) / (W_high - W_low)
 
-im2 = plot_timeseries_2d(axs[2], psd_posteriors.datetimes, d_m, Z,
+im2 = plot_timeseries_2d(axs[3], psd_posteriors.datetimes, d_m, Z,
                       cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
+                      vmin=1,
                       alpha=alpha
                       )
-add_checkerboard_background(axs[2], check_size_px=10, light=0.92, dark=0.75)
-axs[2].set_title('Posterior median with relative uncertainty (= transparency)')
-
-fig.tight_layout()
-plt.show()
-
-
-# Figure 2: Variance reduction and posterior CI width plots -------------------
-fig, axs = plt.subplots(nrows=2, ncols=1, num=2, clear=True)
-
-prior = smoothness_prior(d_m, 0, 8/16, 1.5)
-prior_variance = np.diag(prior['covariance'])
-post_variance = psd_posteriors.variance()
-VR = np.log10(post_variance / prior_variance).T
-
-plot_timeseries_2d(axs[0], psd_posteriors.datetimes, d_m, VR,
-                log_color_scale=False,
-                cbar_label=r'$\log_{10}(\sigma_\mathrm{post}^2 / \sigma_\mathrm{prior}^2)$',
-                cmap='Blues_r'
-                )
-axs[0].set_title('log variance reduction')
-
-# Plot uncertainties as CI width
-CI_width = CI_upper - CI_lower
-plotval = CI_width.T / binwidth
-vmin = np.quantile(plotval.flatten(), 0.001)
-plot_timeseries_2d(axs[1], psd_posteriors.datetimes, d_m, plotval,
-                # log_color_scale=False,
-                cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
-                cmap='Blues_r'
-                )
-axs[1].set_title(f'Estimate uncertainty (width of the {CI_coverage} % credible intervals)')
+add_checkerboard_background(axs[3], check_size_px=10, light=0.92, dark=0.75)
+axs[3].set_title('Posterior median with relative uncertainty (= transparency)')
 
 fig.tight_layout()
 plt.show()
 
 
 
-# Figure 3: Analyze single time instants in more detail -----------------------
-fig = plt.figure(num=3, clear=True)
+# Figure 2: Analyze single time instants in more detail -----------------------
+fig = plt.figure(num=2, clear=True)
+
+d_m = psd_posteriors[0].d_m
 
 gs = gridspec.GridSpec(3, 2, height_ratios=[1, 0.05, 1])
 axs = np.empty((2, 2), dtype=object)
@@ -229,8 +209,9 @@ fig.tight_layout()
 plt.show()
 
 
-# Figure 4: Check the datafit -------------------------------------------------
-fig, ax = plt.subplots(1, 1, num=4, clear=True)
+
+# Figure 3: Check the datafit -------------------------------------------------
+fig, ax = plt.subplots(1, 1, num=3, clear=True)
 
 # Take the measurement matching the inverted one
 meas = dataset.at_time(psd_posteriors.datetimes[idx_1])
@@ -240,8 +221,10 @@ plot_datafit(ax, DMPS, meas.output, psd_posteriors[idx_1])
 
 
 
-# Figure 5: Total particle numbers --------------------------------------------
-fig, axs = plt.subplots(nrows=4, ncols=1, num=5, clear=True)
+# Figure 4: Total particle numbers --------------------------------------------
+fig, axs = plt.subplots(nrows=4, ncols=1, num=4, clear=True)
+
+d_m = psd_posteriors[0].d_m
 
 Ntot_samples = psd_posteriors.propagate_to(total_concentration)
 nucl_samples = psd_posteriors.propagate_to(concentration_in_range, d_m, 1e-9, 25e-9)
@@ -263,7 +246,7 @@ fig.tight_layout()
 
 
 
-# Figures 6-7: Plot some derived quantities -----------------------------------
+# Figures 5-6: Plot some derived quantities -----------------------------------
 gmd_samples = psd_posteriors.propagate_to(geometric_mean_diameter, d_m)
 gstd_samples = psd_posteriors.propagate_to(geometric_std, d_m)
 mode_samples = psd_posteriors.propagate_to(mode_diameter, d_m)
@@ -274,7 +257,7 @@ CS_samples = psd_posteriors.propagate_to(condensation_sink, d_m)
 eff_diam_samples = psd_posteriors.propagate_to(effective_diameter, d_m)
 
 
-fig, axs = plt.subplots(4, 1, num=6, clear=True)
+fig, axs = plt.subplots(4, 1, num=5, clear=True)
 fig.suptitle('Growth and surface area effects')
 
 plot_timeseries_1d(axs[0], psd_posteriors.datetimes, CS_samples, coverage=CI_coverage,
@@ -292,7 +275,7 @@ axs[3].set_ylabel(r'$d_m$')
 fig.tight_layout()
 
 
-fig, axs = plt.subplots(4, 1, num=7, clear=True)
+fig, axs = plt.subplots(4, 1, num=6, clear=True)
 fig.suptitle('Shape evolution')
 
 ymin = np.floor(dataset[0].d_m_data[0] * 1e8) * 1e-8
