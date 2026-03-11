@@ -48,18 +48,18 @@ DMPS_prop['d_m_data'] = np.geomspace(10e-9, 800e-9, num=30) # d_min, d_max, num_
 # DMPS_prop['custom_CPC_count_eff_function'] = custom_CPC_counting_efficiency
 
 
-
 # =============================================================================
 # Step 2: Generate synthetic data
 # =============================================================================
 
 # Predefined PSD scenarios are:
-#     Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert
+#     Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert,
+#     Trimodal nucleation event, Asymmetric, Irregular
 measurement = generate_DMPS_measurement(DMPS_prop.copy(),
                                         scenario='Urban',
                                         pos_ion_mobility=1.40e-4,
                                         neg_ion_mobility=1.90e-4,
-                                        rng_seed=0
+                                        rng_seed=None
                                         )
 
 
@@ -69,16 +69,17 @@ measurement = generate_DMPS_measurement(DMPS_prop.copy(),
 # =============================================================================
 
 # Optionally specify the number of inversion bins
-n_inversion_bins = 60
+n_inversion_bins = 70
 
 # Set up the Gaussian smoothness prior. The values are given in log10-space.
-# The values needed to fully specify the prior are the expected (i.e. mean) value,
-# the correlation length which controls the smoothness of the result w.r.t. particle size,
-# and the standard deviation which controls how large variations in the concentration
-# are allowed.
+# The values needed to fully specify the prior are the expected (i.e. mean)
+# value of the log of the concentration _density_ dN/dlogdp, the standard
+# deviation which controls how large variations in the concentration are
+# allowed, and the correlation length which controls the smoothness of the
+# result w.r.t. particle size.
 expected_value = 0
-correlation_length = 8 / 16
 log_standard_deviation = 1.5
+correlation_length = 8 / 16
 
 
 
@@ -100,11 +101,13 @@ DMPS_inv.set_charger_properties(1.40e-4, 1.90e-4)
 # Create the prior
 prior = smoothness_prior(DMPS_inv.d_m,
                          expected_value,
-                         correlation_length,
-                         log_standard_deviation
+                         log_standard_deviation,
+                         correlation_length
                          )
 
-psd_posterior = invert_psd(DMPS_inv, measurement, prior)
+psd_posterior = invert_psd(DMPS_inv, measurement,
+                           prior=prior,
+                           )
 
 # Example: plot the MPSS system matrix
 # from MPSS_UQ.plotfunctions import plot_system_matrix
@@ -123,7 +126,9 @@ DMPS_properties_marg = DMPS_prop.copy()
 # for example the LYF-interp model
 DMPS_properties_marg['charging_model'] = 'LYF-interp'
 
-DMPS_marg = MobilityParticleSizeSpectrometer(DMPS_properties_marg, n_bins=n_inversion_bins)
+DMPS_marg = MobilityParticleSizeSpectrometer(DMPS_properties_marg,
+                                             n_bins=n_inversion_bins,
+                                             )
 
 DMPS_marg.set_operating_conditions(measurement.temperature,
                                    measurement.pressure
@@ -131,19 +136,17 @@ DMPS_marg.set_operating_conditions(measurement.temperature,
 
 prior = smoothness_prior(DMPS_marg.d_m,
                          expected_value,
-                         correlation_length,
-                         log_standard_deviation
+                         log_standard_deviation,
+                         correlation_length
                          )
 
 # Marginalize over charger ion mobilities
-psd_posterior_marg = invert_psd(DMPS_marg,
-                                measurement,
-                                prior,
+psd_posterior_marg = invert_psd(DMPS_marg, measurement,
+                                prior=prior,
                                 marginalize_ion_mobility=True,
-                                num_samples=1000000,  # more samples for cleaner plots
-                                marginalization_grid='fine'  # for smoother Ntot plots
+                                # num_samples=500000,          # More samples and integration grid
+                                # marginalization_grid='fine'  # points for smoother Ntot plots.
                                 )
-
 
 
 # =============================================================================
