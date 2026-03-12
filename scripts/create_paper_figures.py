@@ -24,7 +24,7 @@ from MPSS_UQ.plotfunctions import (plot_psd, plot_posterior_summary,
                                    highest_density_interval, plot_timeseries_2d,
                                    plot_system_matrix, plot_Ntot_histogram,
                                    plot_timeseries_1d, add_checkerboard_background,
-                                   _my_format_colorbar
+                                   _my_format_colorbar, make_three_zone_cmap,
                                    )
 from MPSS_UQ.aerosol import NORMAL_TEMPERATURE, NORMAL_PRESSURE
 from visualize_LYF_model import evaluate_charging_probability_range
@@ -939,17 +939,11 @@ axs[0].set_title(r'a) Posterior median', loc='left')
 W = relative_hdi_width(medians, CI_lower, CI_upper).T
 plot_timeseries_2d(axs[1], psd_posteriors_marg.datetimes, d_m,
                    W,
-                # cbar_label=r'Prior-to-posterior std ratio ($\times$)',
-                # cbar_label=r'$\sigma_\mathrm{prior} / \sigma_\mathrm{post}$',
                 cbar_label=r'Relative width',
-                # discrete_bounds=[0.03, 0.05, 0.08, 0.14, 0.30, 0.5, 1.0],
-                # discrete_bounds=np.geomspace(0.01, 1, 20),
-                # discrete_bounds=np.linspace(1, 2.7, 8),
                 cmap='inferno_r',
                 cbar_as_perc=True,
-                # log_color_scale=False,
-                vmax=10,
-                # vmax = np.nanquantile(W, 0.95),
+                color_scale='log_3zone',
+                vmax=100,
                 cbar_extend='max',
                 )
 axs[1].set_title(
@@ -959,7 +953,10 @@ axs[1].set_title(
 
 # Subplot 3: Ntots
 Ntots_samples = psd_posteriors_marg.propagate_to(total_concentration)
-plot_timeseries_1d(axs[2], psd_posteriors_marg.datetimes, Ntots_samples, CI_coverage)
+plot_timeseries_1d(axs[2], psd_posteriors_marg.datetimes, Ntots_samples,
+                   coverage=CI_coverage,
+                   ymin=0,
+                   )
 dm0 = 10**(np.log10(d_m[0]) - 0.5 * binwidth) * 1e9
 dm1 = 10**(np.log10(d_m[-1]) + 0.5 * binwidth) * 1e9
 axs[2].set_title(fr'c) Total particle number between [{dm0 : .1f}, {dm1 : .1f}] nm', loc='left')
@@ -1055,9 +1052,11 @@ for i, day in enumerate((day1, day2)):
     cmap_psd = mpl.cm.viridis
     
     vmin_w = np.nanpercentile(np.hstack([W_marg.ravel(), W_nom.ravel()]), 0.1)
-    vmax_w = 10 #np.nanpercentile(np.hstack([W_marg.ravel(), W_nom.ravel()]), 99.9)
-    norm_w = mpl.colors.LogNorm(vmin=vmin_w, vmax=vmax_w)
-    cmap_w = mpl.cm.inferno_r
+    vmax_w = 100 #np.nanpercentile(np.hstack([W_marg.ravel(), W_nom.ravel()]), 99.9)
+    # norm_w = mpl.colors.LogNorm(vmin=vmin_w, vmax=vmax_w)
+    # cmap_w = mpl.cm.inferno_r
+    cmap_w = make_three_zone_cmap(vmin=vmin_w, vmid=10, vmax=vmax_w)
+    norm_w = colors.LogNorm(vmin=vmin_w, vmax=vmax_w)
     
     
     plot_timeseries_2d(ax_psd_marg, day_marg.datetimes, d_m, Z_marg, show_cbar=False,
@@ -1081,12 +1080,14 @@ for i, day in enumerate((day1, day2)):
     
     plot_timeseries_2d(ax_w_marg, day_marg.datetimes, d_m, W_marg, show_cbar=False,
                     cmap='inferno_r', vmin=vmin_w, vmax=vmax_w,
+                    color_scale='log_3zone'
                     )
     ax_w_marg.set_title(fr'c) Uncertainty (relative width of {CI_coverage} % credible interval)',
                         loc='left')
     ax_w_marg.set_xlabel('')
     plot_timeseries_2d(ax_w_nom, day_nom.datetimes, d_m, W_nom, show_cbar=False,
                     cmap='inferno_r', vmin=vmin_w, vmax=vmax_w,
+                    color_scale='log_3zone'
                     )
     ax_w_nom.set_title(fr'd) Uncertainty (relative width of {CI_coverage} % credible interval)',
                        loc='left')
@@ -1185,6 +1186,8 @@ for i, day in enumerate((day1, day2)):
     # N_CI_ratio = N_CI_width_marg / N_CI_width_nom
     # plt.figure(), plt.plot(Nt_marg, N_CI_ratio, '.')
     # plt.figure(), plt.hist(N_CI_ratio, 15)
+    # r = np.corrcoef(Nt_marg, N_CI_ratio)[0, 1]
+    # print(f'Correlation between Ntot and CI_ratio: {r : .3f}')
 
 
 #%% Check a single scan
@@ -1235,37 +1238,64 @@ if SAVE_FIGURES:
 
 #%% Calculate some derived quantities with uncertainties
 
-posts_week = psd_posteriors_marg.between_times('2024-12-10', '2024-12-16')
+psd_timerange = psd_posteriors_marg.between_times('2024-12-08', '2024-12-15')
 
 
 # concentration_in_range, geometric_mean_diameter, mode_diameter,
 # median_diameter, surface_area_concentration, volume_concentration,
 # condensation_sink, effective_diameter, geometric_std
 
-fig, axs = plt.subplots(nrows=4, ncols=1, num=50, clear=True)
+fig, axs = plt.subplots(nrows=5, ncols=1, num=50, clear=True,
+                        figsize=(FIG_WIDTH_DOUBLE, 2.0 * FIG_HEIGHT))
 
-d_m = posts_week[0].d_m
+d_m = psd_timerange[0].d_m
 
-Ntot_samples = posts_week.propagate_to(total_concentration)
-nucl_samples = posts_week.propagate_to(concentration_in_range, d_m, 1e-9, 25e-9)
-ait_samples = posts_week.propagate_to(concentration_in_range, d_m, 25e-9, 100e-9)
-acc_samples = posts_week.propagate_to(concentration_in_range, d_m, 100e-9, 1000e-9)
+Ntot_samples = psd_timerange.propagate_to(total_concentration)
+nucl_samples = psd_timerange.propagate_to(concentration_in_range, d_m, 1e-9, 25e-9)
+ait_samples = psd_timerange.propagate_to(concentration_in_range, d_m, 25e-9, 100e-9)
+acc_samples = psd_timerange.propagate_to(concentration_in_range, d_m, 100e-9, 1000e-9)
+CS_samples = psd_timerange.propagate_to(condensation_sink, d_m)
 
-dm0 = 10**(np.log10(posts_week[0].d_m[0]) - 0.5 * binwidth) * 1e9
-dm1 = 10**(np.log10(posts_week[0].d_m[-1]) + 0.5 * binwidth) * 1e9
 
-plot_timeseries_1d(axs[0], posts_week.datetimes, Ntot_samples, coverage=CI_coverage,
-                   title=rf'$N_\mathrm{{tot}}$ between [{dm0 : .1f}, {dm1 : .1f}] nm')
-plot_timeseries_1d(axs[1], posts_week.datetimes, nucl_samples, coverage=CI_coverage,
-                   title=r'$N_\mathrm{tot}$ in nucleation mode (1-25 nm)')
-plot_timeseries_1d(axs[2], posts_week.datetimes, ait_samples, coverage=CI_coverage,
-                   title=r'$N_\mathrm{tot}$ in Aitken mode (25-100 nm)')
-plot_timeseries_1d(axs[3], posts_week.datetimes, acc_samples, coverage=CI_coverage,
-                   title=r'$N_\mathrm{tot}$ in accumulation mode (100-1000 nm)')
+CI_coverage = 95
+medians_tr, _, _ = psd_timerange.summary(coverage=CI_coverage, n_jobs=10)
+binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
+Z_timerange = medians_tr.T / binwidth
+
+plot_timeseries_2d(axs[0], psd_timerange.datetimes, d_m, Z_timerange,
+                   show_cbar=False
+                # cbar_label=r'$\mathrm{d}N / \mathrm{d}\log d_m$ $(\mathrm{cm}^{-3})$',
+                )
+axs[0].set_ylabel(r'$d_\mathrm{m}$')
+axs[0].set_title(r'Posterior median', loc='left')
+plot_timeseries_1d(axs[1], psd_timerange.datetimes, nucl_samples, coverage=CI_coverage,
+                   title='Nucleation mode (1-25 nm)'
+                   )
+axs[1].set_ylabel(r'$N_\mathrm{tot}$')
+plot_timeseries_1d(axs[2], psd_timerange.datetimes, ait_samples, coverage=CI_coverage,
+                   title='Aitken mode (25-100 nm)')
+axs[2].set_ylabel(r'$N_\mathrm{tot}$')
+plot_timeseries_1d(axs[3], psd_timerange.datetimes, acc_samples, coverage=CI_coverage,
+                   title='Accumulation mode (100-1000 nm)')
+axs[3].set_ylabel(r'$N_\mathrm{tot}$')
+plot_timeseries_1d(axs[4], psd_timerange.datetimes, CS_samples, coverage=CI_coverage,
+                   title='Condensation sink')
+axs[4].set_ylabel(r'$s^{-1}$')
+
+for i, ax in enumerate(axs):
+    ax.set_xlabel('')
+    if i != 4:
+        ax.tick_params(labelbottom=False)
+    if i != 1:
+        ax.legend().set_visible(False)
 fig.tight_layout()
+fig.subplots_adjust(hspace=0.27)
 
 
 # ETC
+
+if SAVE_FIGURES:
+    plt.savefig(f'{FIGURES_DIR}/derived_quantities_Ntot.png', dpi=DPI)
 
 
 

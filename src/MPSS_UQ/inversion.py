@@ -752,7 +752,7 @@ def smoothness_prior(d_m, mean=0.0, standard_deviation=1.5, correlation_length=0
     prior['covariance'] = a * np.exp(-0.5 * distance_matrix / b**2)
     
     # Add something small to the diagonal to make the matrix better invertible
-    prior['covariance'] += 1e-12 * prior['covariance'][0, 0] * np.eye(n_bins)
+    prior['covariance'] += 1e-9 * prior['covariance'][0, 0] * np.eye(n_bins)
     
     # Direct inverse
     # prior['inv_covariance'] = np.linalg.inv(prior['covariance'])

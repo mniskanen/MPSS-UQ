@@ -4,8 +4,10 @@ import math
 import numpy as np
 import numpy.ma as ma
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as tck
+from typing import Literal
 
 from MPSS_UQ.analysis import highest_density_interval, summarize_samples
 from MPSS_UQ.inversion import PSDPosterior
@@ -163,8 +165,8 @@ def plot_timeseries_1d(ax,
         label_med = None
     
     ax.set_xlim(datetimes[0], datetimes[-1] + typical_dt)
-    ymax = np.quantile(CI_high, 1) if ymax is None else ymax
-    ymin = np.quantile(CI_low, 0) if ymin is None else ymin
+    ymax = np.quantile(CI_high, 0.999) if ymax is None else ymax
+    ymin = np.quantile(CI_low, 0.001) if ymin is None else ymin
     if log_yscale:
         ax.set_yscale('log')
     ax.set_ylim([ymin, ymax])
@@ -176,7 +178,7 @@ def plot_timeseries_1d(ax,
 
 def plot_timeseries_2d(ax, datetimes, d_m, Z,
                     cmap='viridis',
-                    log_color_scale=True,
+                    color_scale: Literal['linear', 'log', 'log_3zone'] = 'log',
                     vmin_q=None, vmax_q=None,
                     vmin=None, vmax=None,
                     discrete_bounds=None,
@@ -187,7 +189,7 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
                     gap_factor=1.5,
                     alpha=None,  # optional per-cell alpha, shape (n_bins, n_meas)
                     ):
-    '''
+    '''# TODO: update this
     Plot a 2D time-size field as a pcolormesh with automatic gap masking.
 
     Parameters
@@ -281,9 +283,12 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
         vmin = discrete_bounds[0]
         vmax = discrete_bounds[-1]
     
-    elif log_color_scale:
+    elif color_scale == 'log':
         _norm = colors.LogNorm(vmin=vmin, vmax=vmax)
-    else:
+    elif color_scale == 'log_3zone':
+        cmap = make_three_zone_cmap(vmin=vmin, vmid=10, vmax=vmax)
+        _norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+    elif color_scale == 'linear':
         _norm = colors.Normalize(vmin=vmin, vmax=vmax)
     
     im = ax.pcolormesh(date_edges, d_m_edges, Z_masked, cmap=cmap, norm=_norm, shading='auto')
@@ -320,10 +325,13 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
             if cbar_as_perc:
                 cbar.set_ticklabels([f"{v*100:.0f} %" for v in discrete_bounds])
         else:
-            if log_color_scale:
-                _my_format_colorbar(cbar, vmin, vmax, log_scale=log_color_scale, sig_digits=0)
-            else:
-                _my_format_colorbar(cbar, vmin, vmax, log_scale=log_color_scale, sig_digits=1)
+            if color_scale == 'log':
+                _my_format_colorbar(cbar, vmin, vmax, log_scale=True, sig_digits=0)
+            elif color_scale == 'log_3zone':
+                _my_format_colorbar(cbar, vmin, vmax, log_scale=True, sig_digits=0)
+            elif color_scale == 'linear':
+                _my_format_colorbar(cbar, vmin, vmax, log_scale=False, sig_digits=1)
+            
             if cbar_as_perc:
                 cbar.ax.yaxis.set_major_formatter(
                     tck.FuncFormatter(lambda x, pos: f"{x*100:.0f} %")
@@ -336,6 +344,32 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
     ax.set_xlabel('Time')
     
     return im
+
+
+def make_three_zone_cmap(vmin, vmid, vmax):
+    """
+    Three-zone colormap:
+    - vmin to v_mid: inferno_r (full contrast)
+    - v_mid to v_max: constant light grey
+    - above v_max: clipped to light grey (via set_over)
+    """
+    # Fraction of colorbar for the informative zone
+    frac = np.log10(vmid / vmin) / np.log10(vmax / vmin)
+    
+    n_main = int(256 * frac)
+    n_grey = 256 - n_main
+    
+    inferno_r = plt.cm.inferno_r
+    colors_main = inferno_r(np.linspace(0, 1, n_main))
+    
+    grey = [0.5, 0.5, 0.5, 1.0]
+    colors_grey = np.tile(grey, (n_grey, 1))
+    
+    all_colors = np.vstack([colors_main, colors_grey])
+    cmap = colors.LinearSegmentedColormap.from_list('three_zone', all_colors, N=256)
+    cmap.set_over('white')  # unconstrained: white
+    
+    return cmap
 
 
 def _my_format_colorbar(cbar, vmin, vmax, min_dist_frac=0.06, log_scale=True, sig_digits=0):
@@ -353,7 +387,7 @@ def _my_format_colorbar(cbar, vmin, vmax, min_dist_frac=0.06, log_scale=True, si
     # Get default ticks and keep only those within range
     ticks = np.array(cbar.get_ticks())
     ticks = ticks[(ticks >= vmin) & (ticks <= vmax)]
-
+    
     # Remove ticks that are too close to vmin or vmax
     keep = [t for t in ticks
             if _dist(t, vmin) > min_dist and _dist(t, vmax) > min_dist]
