@@ -189,27 +189,46 @@ def plot_timeseries_2d(ax, datetimes, d_m, Z,
                     gap_factor=1.5,
                     alpha=None,  # optional per-cell alpha, shape (n_bins, n_meas)
                     ):
-    '''# TODO: update this
-    Plot a 2D time-size field as a pcolormesh with automatic gap masking.
-
+    '''
+    Plot a time–size 2D field (e.g. particle size distribution) as a pcolormesh,
+    with automatic detection of time gaps and per‑cell masking or transparency.
+    
     Parameters
     ----------
     ax : matplotlib.axes.Axes
+        Target axes into which the mesh will be drawn.
     datetimes : array-like of datetime64, shape (n_meas,)
-        Measurement timestamps (columns of Z).
+        Measurement timestamps. Each column of `Z` corresponds to the interval
+        [t[i], t[i+1]). A final right-edge is inferred automatically.
     d_m : array-like of float, shape (n_bins,)
-        Bin-centre diameters in metres.
+        Bin‑center particle diameters in metres. Edges are inferred in log10 space
+        assuming constant log‑bin spacing.
     Z : array-like, shape (n_bins, n_meas)
-        Values to plot (e.g. size distribution).
-    cmap : str, optional
-    log_color_scale : bool, optional
-        Use LogNorm if True, linear Normalize otherwise.
-    vmin, vmax : float or None
-        Manual color limits. Mutually exclusive with vmin_q / vmax_q.
-    vmin_q, vmax_q : float or None
-        Quantile-based color limits in [0, 1]. Defaults: 0.001, 0.999.
+        The data field to plot (e.g. particle number size distribution).
+    cmap : str or Colormap, optional
+        Colormap or name of a matplotlib colormap. Default is 'viridis'.
+    color_scale : {'linear', 'log', 'log_3zone'}, optional
+        Type of color normalisation:
+        - 'linear':    uses `Normalize`
+        - 'log':       uses `LogNorm`
+        - 'log_3zone': log scale with a custom three‑zone colormap
+                       (via `make_three_zone_cmap`)
+    vmin, vmax : float or None, optional
+        Explicit color limits. Mutually exclusive with `vmin_q` / `vmax_q`.
+    vmin_q, vmax_q : float in [0, 1] or None, optional
+        Quantile‑based color limits. If given, vmin/vmax are set from the
+        (vmin_q, vmax_q) quantiles of the unmasked data. Defaults: 0.001, 0.999.
+    discrete_bounds : array-like or None, optional
+        If provided, defines bin boundaries for a discrete colormap. Color
+        normalization switches to `BoundaryNorm`, and the colormap is resampled
+        to match the number of bins.
+    cbar_extend : {"neither", "both", "min", "max"}, optional
+        Passed to `colorbar(..., extend=...)`. Controls colorbar extension
+        triangles.
     show_cbar : bool, optional
+        Whether to draw a colorbar.
     cbar_label : str or None, optional
+        Label for the colorbar.
     cbar_as_perc : bool, optional
         Format colorbar tick labels as percentages.
     gap_factor : float, optional
@@ -552,38 +571,31 @@ def plot_Ntot_histogram(ax, Ntots, Ntot_true=None, xlimits=None, color='C0'):
     else:
         plt_lo, plt_hi = xlimits
     
-    counts, bins = np.histogram(Ntots, bins=100, range=(plt_lo, plt_hi), density=True)
+    counts, bins = np.histogram(Ntots, bins=100, range=(plt_lo, plt_hi), density=False)
     width = bins[1] - bins[0]
-    ax.bar(bins[1:] - width, counts, width=width, edgecolor="white", color=color, alpha=0.8)
-    ymin, ymax = ax.get_ylim()
     
-    ax.vlines(x=[Ntot_low95, Ntot_high95],
-               ymin=ymin, ymax=ymax * 1.15, colors='k', linestyle='--')
+    # Unit-peak normalization (shape-only: each curve peaks at 1)
+    peak = counts.max() if counts.size and counts.max() > 0 else 1.0
+    h = counts / peak
+    
+    ax.bar(bins[1:] - width, h, width=width, edgecolor="white", color=color, alpha=0.8)
+    ymin, ymax = ax.get_ylim()
     
     ax.set_ylim((ymin, 1.3 * ymax))
     
-    # Plot the CI ranges
-    N95_diff = Ntot_high95 - Ntot_low95
-    ax.plot(
-        np.array([Ntot_low95 + 0.1 * N95_diff, Ntot_high95 - 0.1 * N95_diff]),
-        1.2 * np.array([ymax, ymax]),
-        'k--',
-        linewidth=1.5
-        )
-    anno_args = {
-        'ha': 'center',
-        'va': 'center',
-        'size': 10
-    }
-    ax.annotate('95 % CI',
-                 xy=(0.5 * (Ntot_low95 + Ntot_high95), ymax * 1.23), **anno_args)
-    anno_args['size'] = 16
-    ax.annotate('[', xy=(Ntot_low95, 1.2 * ymax), **anno_args)
-    ax.annotate(']', xy=(Ntot_high95, 1.2 * ymax), **anno_args)
-    
     ax.set_title(r'Sampled $N_{tot}$ values and credible intervals')
     ax.set_xlabel(r'$N_{tot}$')
-    ax.set_ylabel(r'$N_{tot}$ density')
+    ax.set_ylabel(r'Relative frequency')
+    
+    ax.annotate("",
+                xy=(Ntot_low95, 1.1 * ymax), 
+                xytext=(Ntot_high95, 1.1 * ymax),
+                arrowprops=dict(arrowstyle="|-|", color=color, lw=1.8)
+                )
+    ax.annotate(r'$95$ % CI', xy=(Ntot_low95 + 200, 1.11 * ymax),
+                ha='left', va='bottom', fontsize=10, color=color)
+    
+    ax.set_ylim(0, 1.35)  # same y-range for all (unit peak)
     
     if Ntot_true is not None:
         low_y, high_y = ax.get_ylim()
