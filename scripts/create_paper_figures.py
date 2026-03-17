@@ -683,7 +683,6 @@ for i, c in enumerate(cases):
     multiplier = (hi_marg - low_marg) / (hi - low)
     print(multiplier)
     
-    # ax.plot(np.array([low_marg, hi_marg]), 1.1 * np.array([ymax, ymax]), 'C0--', linewidth=1.5)
     ax.annotate("",
                 xy=(low_marg, 1.1 * ymax), 
                 xytext=(hi_marg, 1.1 * ymax),
@@ -903,12 +902,11 @@ psd_posteriors_marg = invert_dataset(DMPS,
 psd_posteriors_nonmarg = invert_dataset(DMPS,
                                     dataset,
                                     marginalize_ion_mobility=False,
-                                    parallel=True,
                                     )
 
-# Save (and compress)
-dump(psd_posteriors_marg, "psd_posteriors_marg.joblib", compress=("gzip", 3))
-dump(psd_posteriors_nonmarg, "psd_posteriors_nonmarg.joblib", compress=("gzip", 3))
+# # Save (and compress)
+# dump(psd_posteriors_marg, "psd_posteriors_marg.joblib", compress=("gzip", 3))
+# dump(psd_posteriors_nonmarg, "psd_posteriors_nonmarg.joblib", compress=("gzip", 3))
 
 # # Load later
 # psd_posteriors_marg = load("psd_posteriors_marg.joblib")
@@ -918,6 +916,50 @@ dump(psd_posteriors_nonmarg, "psd_posteriors_nonmarg.joblib", compress=("gzip", 
 #%%
 CI_coverage = 95
 medians, CI_lower, CI_upper = psd_posteriors_marg.summary(coverage=CI_coverage, n_jobs=10)
+medians_nonmarg, CI_lower_nonmarg, CI_upper_nonmarg = psd_posteriors_nonmarg.summary(
+    coverage=CI_coverage, n_jobs=10)
+
+#%% Check the ratio of marginalized to nonmarginalized credible interval widths and Ntot ones
+
+width_marg = (CI_upper - CI_lower) / medians
+width_nonmarg = (CI_upper_nonmarg - CI_lower_nonmarg) / medians_nonmarg
+d_m = psd_posteriors_marg[0].d_m  # d_m of the stored results
+binwidth = np.log10(d_m[1]) - np.log10(d_m[0])
+plt.figure(), plt.loglog(medians / binwidth, (width_marg / width_nonmarg), '.k', alpha=0.01)
+plt.xlabel('concentration dN/dlogdp')
+plt.ylabel('marginalized CI_width / nonmarg CI_width')
+plt.grid('on', which='both')
+# Above, we see ratios < 1, which should be "impossible". These result probably mostly from the
+# Laplace approximation sometimes inflating the upper boundary of the (nonmarginalized) credible
+# intervals, which does not happen in the mixture of gaussians (not as much at least). Therefore,
+# we can exclude these ratios from further analysis.
+ratios = (width_marg / width_nonmarg).ravel()
+ratios_clip = ratios[ratios >= 1]
+
+plt.figure(), plt.hist(ratios, 1000)
+plt.yscale('log')
+plt.figure(), plt.loglog((medians / binwidth).ravel()[ratios >= 1], ratios_clip, '.k', alpha=0.01)
+plt.xlabel('concentration dN/dlogdp')
+plt.ylabel('marginalized CI_width / nonmarg CI_width')
+plt.grid('on', which='both')
+
+print(f'Mean W_marg / W_nonmarg: {ratios_clip.mean() : .3f}')
+np.percentile(ratios_clip, (1, 99))
+
+Ntot_marg_all = psd_posteriors_marg.propagate_to(total_concentration)
+Ntot_nonmarg_all = psd_posteriors_nonmarg.propagate_to(total_concentration)
+
+nt_mean_marg_all, nt_ci_lo_all_marg, nt_ci_hi_all_marg = summarize_samples(Ntot_marg_all, coverage=95)
+nt_mean_nonmarg_all, nt_ci_lo_all_nonmarg, nt_ci_hi_all_nonmarg = summarize_samples(Ntot_nonmarg_all, coverage=95)
+
+nt_CI_width_all_marg =  nt_ci_hi_all_marg - nt_ci_lo_all_marg
+nt_CI_width_all_nonmarg =  nt_ci_hi_all_nonmarg - nt_ci_lo_all_nonmarg
+nt_CI_ratio_all = nt_CI_width_all_marg / nt_CI_width_all_nonmarg
+plt.figure(), plt.plot(nt_mean_marg_all, nt_CI_ratio_all, '.k', alpha=0.1)
+plt.figure(), plt.hist(nt_CI_ratio_all, 20)
+print(f'Mean ntot_width_marg / ntot_width_nonmarg: {nt_CI_ratio_all.mean() : .3f}')
+np.percentile(nt_CI_ratio_all, (1, 99))
+
 #%%
 # fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(FIG_WIDTH_DOUBLE, 3 * FIG_HEIGHT),
 #                         num=17, clear=True)
@@ -1023,7 +1065,7 @@ for i, day in enumerate((day1, day2)):
     Ntots_nom = day_nom.propagate_to(total_concentration)
     Nt_marg, Nt_low_marg, Nt_high_marg = summarize_samples(Ntots_marg, coverage=95)
     Nt_nom, Nt_low_nom, Nt_high_nom = summarize_samples(Ntots_nom, coverage=95)
-    #%%
+    
     fig = plt.figure(num=18, clear=True, figsize=(FIG_WIDTH_DOUBLE, 2 * FIG_HEIGHT))
     
     # Grid: 3 rows x 3 cols, last colum for color bars
@@ -1180,6 +1222,15 @@ for i, day in enumerate((day1, day2)):
         elif i == 1:
             plt.savefig(f'{FIGURES_DIR}/day_25_comparison.png', dpi=DPI)
     
+    # # PSD CI ratios
+    # CI_width_marg =  (CI_up_marg - CI_lo_marg) / medians_marg
+    # CI_width_nom =  (CI_up_nom - CI_lo_nom) / medians_nom
+    # CI_ratio = CI_width_marg / CI_width_nom
+    # plt.figure(), plt.semilogx(medians_marg / binwidth, CI_ratio, '.')
+    # plt.grid()
+    # plt.title('CI ratio vs. median')
+    # plt.figure(), plt.hist(CI_ratio, 15)
+    
     # # Ntot CI ratios
     # N_CI_width_marg =  Nt_high_marg - Nt_low_marg
     # N_CI_width_nom =  Nt_high_nom - Nt_low_nom
@@ -1208,7 +1259,7 @@ axs[0].set_yscale('linear')
 axs[0].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
 axs[0].grid('on')
 axs[0].set_title(
-    f'PSD on {datetime_1.date()} at {datetime_1.time()}, marginalized',
+    f'PSD on {datetime_1.date()} at {datetime_1.time()}',
     loc='center'
     )
 
@@ -1216,10 +1267,18 @@ plot_posterior_summary(axs[2], single_nom[0], CI_coverage, color='C1')
 axs[2].set_yscale('linear')
 axs[2].set_xlim([d_m[0] * 1e9, d_m[-1] * 1e9])
 axs[2].grid('on')
-axs[2].set_title(
-    f'PSD on {datetime_2.date()} at {datetime_2.time()}, non-marginalized',
-    loc='center'
-    )
+# axs[2].set_title(
+#     f'PSD on {datetime_2.date()} at {datetime_2.time()}',
+#     loc='center'
+#     )
+
+# Set same ylims
+axx = (axs[0], axs[2])
+ymaxx = max(ax.get_ylim()[1] for ax in axx)
+yminn = min(ax.get_ylim()[0] for ax in axx)
+for ax in axx:
+    ax.set_ylim(yminn, ymaxx)
+
 
 Ntot_samples_marg = single_marg[0].propagate_to(total_concentration)
 Ntot_samples_nom = single_nom[0].propagate_to(total_concentration)
@@ -1228,8 +1287,43 @@ Ntot_max = max(np.percentile(Ntot_samples_marg, 99.9), np.percentile(Ntot_sample
 plot_Ntot_histogram(axs[1], Ntot_samples_marg, xlimits=(Ntot_min, Ntot_max))
 plot_Ntot_histogram(axs[3], Ntot_samples_nom, xlimits=(Ntot_min, Ntot_max), color='C1')
 
+for ax in (axs[0], axs[1]):
+    ax.tick_params(labelbottom=False)
+    ax.set_xlabel('')
+for ax in (axs[2], axs[3]):
+    ax.set_title('')
+for ax in (axs[0], axs[2]):
+    ax.set_xticks([d_m[0] * 1e9, 20, 50, 100, 250, 500, d_m[-1] * 1e9])
+
+axs[0].annotate(r'Marginalized',
+                xy=(700, 10100),
+            ha='right',
+            va='bottom',
+            fontsize=12,
+            bbox=dict(
+                    facecolor='white',
+                    edgecolor='C0',
+                    linewidth=2,
+                    alpha=0.7,
+                    pad=3,
+                    )
+            )
+axs[2].annotate(r'Non-marginalized',
+                xy=(700, 10100),
+            ha='right',
+            va='bottom',
+            fontsize=12,
+            bbox=dict(
+                    facecolor='white',
+                    edgecolor='C1',
+                    linewidth=2,
+                    alpha=0.7,
+                    pad=3,
+                    )
+            )
+
 fig.tight_layout()
-fig.subplots_adjust(top=0.93, wspace=0.20, hspace=0.4)
+fig.subplots_adjust(hspace=0.05)
 plt.show()
 
 if SAVE_FIGURES:
