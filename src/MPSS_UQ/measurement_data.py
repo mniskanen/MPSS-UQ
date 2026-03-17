@@ -55,9 +55,9 @@ class Measurement:
             self.inv_noise_L = np.sqrt(self.inv_noise_cov)
         
         elif self.output_type == 'concentration':
-            # TODO
-            raise TypeError('Concentration output has not been implemented yet. It is ' +
-                            'recommended the measurement output is given as counts.')
+            raise TypeError(
+                'Concentration output has not been implemented yet (and may never be). ' +
+                'The measurement output should be given as counts.')
         else:
             raise ValueError('Unknown CPC output type')
     

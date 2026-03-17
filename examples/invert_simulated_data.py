@@ -10,11 +10,12 @@ from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer
 from MPSS_UQ.inversion import invert_psd, smoothness_prior
 from MPSS_UQ.analysis import total_concentration, summarize_samples
 from MPSS_UQ.measurement_data import generate_DMPS_measurement, compute_true_Ntot_in_range
-from MPSS_UQ.plotfunctions import plot_psd, plot_posterior_summary, plot_Ntot_histogram, plot_datafit
+from MPSS_UQ.plotfunctions import (plot_psd, plot_posterior_summary, plot_Ntot_histogram,
+                                   plot_datafit)
 
 
 '''
-This script shows an example on how to use this package for inversion of DMPS data.
+This script shows an example on how to use this package for inversion of MPSS data.
 In this example we use synthetic data generated with a DMPS model.
 '''
 
@@ -25,12 +26,12 @@ In this example we use synthetic data generated with a DMPS model.
 # Step 1: Load a configuration file to set up the DMPS model
 # =============================================================================
 
-# Load a DMPS configuration file. This includes basic geometry and flow rates information
-# on the DMPS. The file DMPS_properties.yaml should be in the same folder as this script.
+# Load a MPSS configuration file. This includes basic geometry and flow rates information on the
+# MPSS (here, a DMPS). The file DMPS_properties.yaml should be in the same folder as this script.
 with open("DMPS_properties.yaml", "r") as f:
     DMPS_prop = yaml.safe_load(f)
 
-# Choose the DMPS
+# Choose the instrument (the config file may store several)
 DMPS_prop = DMPS_prop['UEF-A20']
 
 # Choose mobility diameters the DMPS measures (i.e. the output channels)
@@ -55,10 +56,12 @@ DMPS_prop['d_m_data'] = np.geomspace(10e-9, 800e-9, num=30) # d_min, d_max, num_
 # Predefined PSD scenarios are:
 #     Urban, Marine, Rural, Remote continental, Free troposphere, Polar, Desert,
 #     Trimodal nucleation event, Asymmetric, Irregular
+# The measurement is generated with the LYF-model so we have to specify 
+# the ion mobilities.
 measurement = generate_DMPS_measurement(DMPS_prop.copy(),
                                         scenario='Urban',
-                                        pos_ion_mobility=1.40e-4,
-                                        neg_ion_mobility=1.90e-4,
+                                        pos_ion_mobility=1.35e-4,
+                                        neg_ion_mobility=1.60e-4,
                                         rng_seed=None
                                         )
 
@@ -68,10 +71,22 @@ measurement = generate_DMPS_measurement(DMPS_prop.copy(),
 # Step 3: Set up the inversion model
 # =============================================================================
 
-# Optionally specify the number of inversion bins
+# The 'inversion grid', or the size bins for which the inverted PSD is
+# calculated, is by default set automatically (inversion_grid='auto') when
+# creating the MobilityParticleSizeSpectrometer object. Using this,
+# the smallest and largest inverted bin sizes are calculated based on the
+# measured diameters (expanding the range suitably), with the same grid spacing
+# as the measurements. Optionally, one can set the input variable n_bins to a
+# desired value to increase the number of inversion bins.
+# One can also use their own discretization by giving it as input:
+# inversion_grid=np.ndarray, where the array should include the bin centers
+# spaced logarithmically
+# (for example: inversion_grid=np.geomspace(10e-9, 1000e-9, 100)).
 n_inversion_bins = 70
 
-# Set up the Gaussian smoothness prior. The values are given in log10-space.
+# Optionallly, set up the Gaussian smoothness prior. If not given, a default
+# smoothness prior will be generated automatically by the inversion function.
+# The values are given in log10-space.
 # The values needed to fully specify the prior are the expected (i.e. mean)
 # value of the log of the concentration _density_ dN/dlogdp, the standard
 # deviation which controls how large variations in the concentration are
@@ -79,7 +94,7 @@ n_inversion_bins = 70
 # result w.r.t. particle size.
 expected_value = 0
 log_standard_deviation = 1.5
-correlation_length = 8 / 16
+correlation_length = 0.5
 
 
 
@@ -87,18 +102,42 @@ correlation_length = 8 / 16
 # Step 4: Carry out inversion - Option 1: Laplace approximation
 # =============================================================================
 
-# Choose a charging model
+# Choose a charging model. The options are:
+#     - Wiedensohler : The Wiedensohler approximation
+#     - LYF-direct : A Python implementation of the LYF model, slow!
+#     - LYF-interp : Interpolated version of LYF-direct, fast! (recommended default)
+#         Interpolates the charging probabilities directly, allows changing
+#         ion mobilities.
+#     - LYF-interp-flux : Another interpolated version of LYF-direct, also fast.
+#         Interpolates the flux coefficients instead of charging probabilities
+#         directly. This allows changing both ion mobilities and the ion ratio.
+    
 # DMPS_prop['charging_model'] = 'Wiedensohler'
 DMPS_prop['charging_model'] = 'LYF-interp'
+
+# Choose the maximum number of multiple charges that will be considered
 DMPS_prop['max_charge'] = 10
 
-# Create the MPSS object used in the inversion
-DMPS_inv = MobilityParticleSizeSpectrometer(DMPS_prop, n_bins=n_inversion_bins)
+# Create the MPSS object used in the inversion. Takes as input all DMPS (MPSS)
+# properties, including which charging model to use.
+DMPS_inv = MobilityParticleSizeSpectrometer(DMPS_prop,
+                                            n_bins=n_inversion_bins,
+                                            )
 
-DMPS_inv.set_operating_conditions(measurement.temperature, measurement.pressure)
-DMPS_inv.set_charger_properties(1.40e-4, 1.90e-4)
+# Give the measurement temperature and pressure. Here, they are read from the
+# Measurement() object returned by generate_DMPS_measurement().
+DMPS_inv.set_operating_conditions(measurement.temperature,
+                                  measurement.pressure,
+                                  )
 
-# Create the prior
+# If using the LYF model, we need to set the charger properties. For LYF-interp,
+# the ion ratio is assumed to be 1.0 and we only give
+# (positive ion mobility, negative ion mobility).
+# For LYF-direct and LYF-interp-flux we also need to give the ion ratio
+# (positive ion mobility, negative ion mobility, ion_ratio).
+DMPS_inv.set_charger_properties(1.35e-4, 1.60e-4)
+
+# Create the prior (needs also the instrument inversion bins as input).
 prior = smoothness_prior(DMPS_inv.d_m,
                          expected_value,
                          log_standard_deviation,
@@ -106,7 +145,7 @@ prior = smoothness_prior(DMPS_inv.d_m,
                          )
 
 psd_posterior = invert_psd(DMPS_inv, measurement,
-                           prior=prior,
+                           prior=prior,  # comment this out to use the default prior
                            )
 
 # Example: plot the MPSS system matrix
@@ -120,10 +159,13 @@ psd_posterior = invert_psd(DMPS_inv, measurement,
 # Step 4: Carry out inversion - Option 2: Marginalize over ion properties
 # =============================================================================
 
-DMPS_properties_marg = DMPS_prop.copy()
+# Note that we could also re-use the DMPS_inv from Step 3, but only if it
+# does not use charging_model='Wiedensohler' (since we're marginglizing
+# over the ion mobilities here).
 
 # To marginalize, we have to use a model where we can modify the ion properties,
-# for example the LYF-interp model
+# for example the LYF-interp model.
+DMPS_properties_marg = DMPS_prop.copy()
 DMPS_properties_marg['charging_model'] = 'LYF-interp'
 
 DMPS_marg = MobilityParticleSizeSpectrometer(DMPS_properties_marg,
@@ -131,7 +173,7 @@ DMPS_marg = MobilityParticleSizeSpectrometer(DMPS_properties_marg,
                                              )
 
 DMPS_marg.set_operating_conditions(measurement.temperature,
-                                   measurement.pressure
+                                   measurement.pressure,
                                    )
 
 prior = smoothness_prior(DMPS_marg.d_m,

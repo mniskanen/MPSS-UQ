@@ -175,7 +175,7 @@ class MobilityParticleSizeSpectrometer:
         
         self.transfer_function = self._calc_transfer_func_cacheable(temperature_bin, pressure_bin)
         
-        self.penetration_efficiency = self.compute_penetration_efficiency()
+        self.penetration_efficiency = self.compute_DMA_penetration_efficiency()
         self.sampling_line_loss = self.compute_sampling_line_loss()
         
         # Only update the system matrix if the charging probability has been computed
@@ -298,8 +298,13 @@ class MobilityParticleSizeSpectrometer:
         self.G = 4 * (1 + self.beta)**2 / (1 - gamma) * (I + (2 * (1 + self.beta) * kappa)**-2)
     
     
-    def compute_penetration_efficiency(self):
-        ''' Note: this is just an example and should be modified to the DMPS used. '''
+    def compute_DMA_penetration_efficiency(self):
+        ''' Note: this is an empirical formula and should be modified to the DMA used.
+        Set L_eff to zero to no use this function.
+        '''
+        
+        if np.isclose(float(self.L_eff), 0.0):
+            return np.ones_like(self.d_m, dtype=float)
         
         a = 3.66
         b = 0.2672

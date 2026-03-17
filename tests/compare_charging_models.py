@@ -76,5 +76,4 @@ for idx, k in enumerate(charges_output):
         plt.loglog(particle_radius, W_cp[idx], 'gd', markerfacecolor='none')
 
 plt.axis([2e-10, 1e-5, 1e-4, 1.15])
-# plt.axis([2e-10, 1e-5, 1e-16, 1.15])
 plt.legend()

@@ -2,7 +2,7 @@
 
 from MPSS_UQ.measurement_data import MeasurementDataset
 from MPSS_UQ.particlesizers import MobilityParticleSizeSpectrometer, lpm_to_m3s
-from MPSS_UQ.inversion import invert_dataset
+from MPSS_UQ.inversion import invert_dataset, smoothness_prior
 from MPSS_UQ.analysis import (total_concentration, concentration_in_range,
                               geometric_mean_diameter, mode_diameter, median_diameter,
                               surface_area_concentration, volume_concentration, condensation_sink,
@@ -14,9 +14,7 @@ from MPSS_UQ.plotfunctions import (plot_posterior_summary, plot_Ntot_histogram, 
 import yaml
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import matplotlib.colors as colors
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 
@@ -61,7 +59,9 @@ dataset = MeasurementDataset(datetimes, d_m_data, counts, 'counts', temperatures
 DMPS_prop['charging_model'] = 'LYF-interp'
 DMPS_prop['max_charge'] = 10
 
-DMPS = MobilityParticleSizeSpectrometer(DMPS_prop, n_bins=70)
+DMPS = MobilityParticleSizeSpectrometer(DMPS_prop,
+                                        n_bins=70,
+                                        )
 
 # Optionally, set these here if you don't plan to update them during inversion
 DMPS.set_charger_properties(1.35e-4, 1.60e-4)
@@ -74,10 +74,17 @@ DMPS.set_charger_properties(1.35e-4, 1.60e-4)
 # See below examples on how to select a subset of the data using datetimes
 # The example dataset covers the whole of December 2024
 
+prior = smoothness_prior(DMPS.d_m,
+                         mean=0.0,
+                         standard_deviation=1.5,
+                         correlation_length=0.5,
+                         )
+
 psd_posteriors = invert_dataset(DMPS,
                              # dataset,
                              dataset.between_times("2024-12-10T12", "2024-12-12T12"),
                              # dataset.between_times("2024-12-08T00:00:00", "2024-12-12T00:00:00"),
+                             prior=prior,
                              marginalize_ion_mobility=True,
                              parallel=True,
                              )
@@ -86,7 +93,6 @@ psd_posteriors = invert_dataset(DMPS,
 # shown below. This reuses the results objects so it is memory-light.
 # example_day = psd_posteriors.between_times('2024-12-10', '2024-12-11')
 
-#%%
 
 # =============================================================================
 # Plot the results
@@ -123,8 +129,9 @@ plot_timeseries_2d(axs[1], psd_posteriors.datetimes, d_m, W,
                 cbar_label='Relative width',
                 cmap='inferno_r',
                 cbar_as_perc=True,
-                vmax=10,
+                vmax=100,
                 cbar_extend='max',
+                color_scale='log_3zone'
                 )
 axs[1].set_title(fr'Posterior uncertainty (relative width of {CI_coverage} % credible interval)')
 
@@ -133,8 +140,7 @@ R = psd_posteriors.prior_to_posterior_ratio().T
 plot_timeseries_2d(axs[2], psd_posteriors.datetimes, d_m, R,
                 cbar_label=r'$\sigma_\mathrm{prior} / \sigma_\mathrm{post}$',
                 cmap='inferno',
-                # cbar_as_perc=True,
-                vmin=1
+                vmin=0.5
                 )
 axs[2].set_title('Posterior uncertainty reduction')
 
@@ -207,7 +213,6 @@ fig.add_artist(line)
 
 fig.tight_layout()
 plt.show()
-
 
 
 # Figure 3: Check the datafit -------------------------------------------------
