@@ -62,6 +62,7 @@ def plot_comparison(ax, DMPS, measurement, result_Laplace, result_MCMC, title, y
     ax.set_ylabel(r'dN / d$\log$d$_m$')
     ax.set_xlabel('Diameter (m)')
     ax.set_title('Posterior comparison' + title)
+    ax.grid('on')
     plt.pause(1.0)
 
 
@@ -123,7 +124,7 @@ def compare_posterior_representations(ax1, ax2, ax3, ax4):
     result_MCMC = invert_psd(DMPS, measurement, use_mcmc=True, num_samples=500000)
     
     plot_comparison(ax1, DMPS, measurement, result_Laplace, result_MCMC,
-                    ', ' + scenario_1 + ' scenario', [0, 300])
+                    ', ' + scenario_1 + ' scenario', [0, 250])
     
     bb = 4  # bin number
     post_cov = result_Laplace.post_covL_log10 @ result_Laplace.post_covL_log10.T
@@ -155,7 +156,7 @@ def compare_posterior_representations(ax1, ax2, ax3, ax4):
     result_MCMC = invert_psd(DMPS, measurement, use_mcmc=True, num_samples=500000)
     
     plot_comparison(ax2, DMPS, measurement, result_Laplace, result_MCMC,
-                    ', ' + scenario_2 + ' scenario', [0, 20000])
+                    ', ' + scenario_2 + ' scenario', [0, 15000])
     
     post_cov = result_Laplace.post_covL_log10 @ result_Laplace.post_covL_log10.T
     plot_histogram_comparison(ax4,
