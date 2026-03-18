@@ -39,7 +39,7 @@ d_m_data = raw_data.filter(like="dmed_").iloc[0].to_numpy()
 
 temperatures = raw_data['t_sam'].to_numpy()
 pressures = raw_data['p_sam'].to_numpy()
-pressures *= 1e2  # Convert from hPa to Pa
+pressures = pressures * 1e2  # Convert from hPa to Pa
 datetimes = pd.to_datetime(raw_data["start_time"], utc=True).dt.tz_convert(None).to_numpy()
 
 # Give d_m_data (output channels) to DMPS properties
