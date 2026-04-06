@@ -224,9 +224,6 @@ def generate_DMPS_measurement(DMPS_prop,
     # Set charger ion properties for the measurement
     DMPS.set_charger_properties(pos_ion_mobility, neg_ion_mobility)
     
-    # from MPSS_UQ.plotfunctions import plot_system_matrix
-    # plot_system_matrix(DMPS, title='data generation', num=10)
-    
     # Generate a synthetic particle size distribution as a sum of lognormal modes
    
     # These are based on Seinfeld & Pandis Table 8.3

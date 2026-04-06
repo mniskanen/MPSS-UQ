@@ -876,7 +876,7 @@ pressures *= 1e2  # Convert from hPa to Pa
 datetimes = pd.to_datetime(raw_data["start_time"], utc=True).dt.tz_convert(None).to_numpy()
 
 # Convert concentration into counts
-sample_flow = DMPS_prop['Qa'] * lpm_to_m3s * 1e6
+sample_flow = DMPS_prop['CPC_Qsample'] * lpm_to_m3s * 1e6
 counts = concentrations * sample_flow * DMPS_prop['CPC_measuring_time']
 
 dataset = MeasurementDataset(datetimes, d_m_data, counts, 'counts', temperatures, pressures)
