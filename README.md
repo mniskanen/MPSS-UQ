@@ -283,6 +283,24 @@ Stores posteriors for a time series of measurements.
 - `.between_times(start, end)` — returns a subset by time range
 - Supports indexing: `series[i]` returns a `PSDPosterior`, `series[start:stop]` returns a new `PSDPosteriorSeries`
 
+### `MeasurementDataset(datetimes, d_m_data, MPSS_outputs, output_type, temperatures, pressures)`
+
+Container for a time series of MPSS measurements. Required input to `invert_dataset()`.
+
+- `datetimes` — array of measurement timestamps
+- `d_m_data` — array of nominal mobility diameters (m)
+- `MPSS_outputs` — 2D array of CPC outputs, shape `(n_scans, n_channels)`
+- `output_type` — `'counts'` or `'concentration'`
+- `temperatures` — array of temperatures (K) per scan
+- `pressures` — array of pressures (Pa) per scan
+- `.between_times(start, end)` — returns a subset by time range
+- `.at_time(datetime)` — returns the single `Measurement` closest to the given time
+
+### `generate_DMPS_measurement(DMPS_properties, scenario, pos_ion_mobility, neg_ion_mobility, rng_seed=None)`
+
+Generates a synthetic MPSS measurement for testing. Returns a `Measurement` object
+that can be passed directly to `invert_psd()`.
+
 ### `smoothness_prior(d_m, mean=0.0, standard_deviation=1.5, correlation_length=0.5)`
 
 Constructs a Gaussian squared-exponential smoothness prior. Parameters are defined in log₁₀ space:
